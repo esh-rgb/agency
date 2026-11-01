@@ -97,6 +97,7 @@ import {
 	SkillError,
 	updateSkill,
 } from "./skills.ts";
+import { canApprove, JourneyError, journeySettings, journeyView, requestApproval, saveJourneySettings, setStage } from "./journey.ts";
 import { saveSso, signInOptions, SsoError, ssoFinish, ssoStartUrl, ssoView } from "./sso.ts";
 import { assertBudget, BudgetError, listUsersWithUsage, parseBudget, recordUsage, setBudget, usageDetail, usageFor } from "./usage.ts";
 
@@ -140,7 +141,7 @@ app.onError((error, c) => {
 	if (error instanceof DataError) return c.json({ error: error.message }, 400);
 	if (error instanceof AccessError) return c.json({ error: error.message }, 403);
 	if (error instanceof FileError) return c.json({ error: error.message }, 400);
-	if (error instanceof GitHubError || error instanceof MailError || error instanceof SsoError || error instanceof SkillError || error instanceof ModelError) return c.json({ error: error.message }, 400);
+	if (error instanceof GitHubError || error instanceof MailError || error instanceof SsoError || error instanceof SkillError || error instanceof ModelError || error instanceof JourneyError) return c.json({ error: error.message }, 400);
 	if (error instanceof NotFoundError) return c.json({ error: error.message }, 404);
 	console.error(error);
 	return c.json({ error: errorMessage(error) }, 500);
@@ -632,6 +633,28 @@ api.post("/projects/:id/publish", async (c) => {
 	});
 });
 
+// ---------------------------------------------------------------------------
+// The journey: the stages an app goes through, and approval before publishing (journey.ts)
+
+api.get("/projects/:id/journey", async (c) => {
+	const { project, role } = await sandboxFor(c, "viewer");
+	return c.json({ ...(await journeyView(project)), canApprove: await canApprove(c.get("user"), role === "owner") });
+});
+
+api.put("/projects/:id/journey/:stage", async (c) => {
+	const { project, role } = await sandboxFor(c, "editor");
+	const body = await c.req.json<{ done?: boolean }>();
+	await setStage(project, c.get("user"), c.req.param("stage"), body.done !== false, role === "owner");
+	return c.json({ ...(await journeyView(project)), canApprove: await canApprove(c.get("user"), role === "owner") });
+});
+
+api.post("/projects/:id/journey/request-approval", async (c) => {
+	const { project } = await sandboxFor(c, "editor");
+	const body = await c.req.json<{ note?: string }>().catch(() => ({ note: "" }));
+	const note = String(body.note ?? "").trim().slice(0, 500);
+	return c.json({ asked: await requestApproval(project, c.get("user"), note) });
+});
+
 api.post("/projects/:id/rollback", async (c) => {
 	const { project } = await projectFor(c, "editor");
 	const { version } = await c.req.json<{ version: number }>();
@@ -717,6 +740,10 @@ api.post("/settings/email/test", requireAdmin, async (c) => {
 	});
 	return c.json({ ok: true, to: user.email });
 });
+
+api.get("/settings/journey", requireAdmin, async (c) => c.json(await journeySettings()));
+
+api.put("/settings/journey", requireAdmin, async (c) => c.json(await saveJourneySettings(await c.req.json())));
 
 api.get("/settings/models", requireAdmin, async (c) => c.json(await modelSettings()));
 

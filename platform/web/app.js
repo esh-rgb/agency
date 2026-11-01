@@ -801,6 +801,188 @@ function AppTitle({ project, canEdit, onRenamed }) {
 	/>`;
 }
 
+// ---------------------------------------------------------------------------
+// The journey: the stages an app goes through, above the chat, for people who have never built
+// software. Each stage says what happens in plain words and can ask the agent for its part; the
+// platform records who finished it (journey.ts). With "approval before publish" on, an admin has to
+// approve the exact version that gets published.
+
+const JOURNEY = [
+	{
+		key: "describe",
+		title: "Describe",
+		what: "Agree in writing on what the app is for: who uses it, what they see and do, which data it uses and the rules it follows. The agent asks you questions and writes the answers in SPEC.md, so everyone, the agent included, works from the same page.",
+		ask: {
+			label: "Write the spec with me",
+			mode: "auto",
+			message:
+				"Let's write the spec for this app before building it. Ask me the questions you need, a few at a time and in plain words: who will use it and why, what they need to see and do, which of the organization's data it uses, and any rules it must follow. Then write SPEC.md at the project root in plain language with those sections, plus a short list of what is out of scope. Don't build the app yet.",
+		},
+		doc: "SPEC.md",
+	},
+	{
+		key: "plan",
+		title: "Plan",
+		what: "The agent reads the spec and proposes how it will build the app, in plain words, before changing anything. Approve the plan, or reply with what to change.",
+		ask: {
+			label: "Propose a plan",
+			mode: "plan",
+			message: "Read SPEC.md and propose a plan to build the app from it: the screens, the data each one uses, and the order you'll build them in. Point out anything in the spec that is unclear or missing.",
+		},
+	},
+	{
+		key: "build",
+		title: "Build",
+		what: "The agent builds the app and the preview updates as it goes. Ask for changes in the chat, or point at part of the preview and say what to change there.",
+		ask: {
+			label: "Build it",
+			mode: "auto",
+			message: "Build the app according to SPEC.md and the plan we agreed. If we change a requirement along the way, update SPEC.md too.",
+		},
+	},
+	{
+		key: "check",
+		title: "Check",
+		what: "The agent tests the app against every point in the spec, fixes what fails, and writes the results in CHECKS.md, with a short list of things you should try yourself in the preview.",
+		ask: {
+			label: "Check the app",
+			mode: "auto",
+			message:
+				"Check the app against SPEC.md. Test every requirement for real: load the pages (curl localhost:3000), try the forms and API routes, query the app's database, and look for errors in /tmp/dev.log. Fix anything that fails. Then write CHECKS.md at the project root: each requirement with ✅ or ❌ and one line in plain words, and at the end a short list of things I should try myself in the preview. Reply with a short summary.",
+		},
+		doc: "CHECKS.md",
+	},
+	{ key: "approve", title: "Approve" },
+	{ key: "publish", title: "Publish", what: "Put the approved version live at its own address, for the people the app is shared with." },
+];
+
+/** Shows the spec or the checks readably: headings, bullets and paragraphs, without the Markdown marks. */
+function PlainDoc({ text }) {
+	return html`<div class="doc">
+		${text.split("\n").map((line) => {
+			const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+			if (heading) return heading[1].length === 1 ? html`<h3>${heading[2]}</h3>` : html`<h4>${heading[2]}</h4>`;
+			const bullet = /^\s*(?:[-*]|\d+[.)])\s+(.*)$/.exec(line);
+			if (bullet) return html`<div class="doc-bullet">${bullet[1].replace(/\*\*/g, "")}</div>`;
+			return line.trim() ? html`<p>${line.replace(/\*\*/g, "")}</p>` : null;
+		})}
+	</div>`;
+}
+
+function DocSheet({ projectId, path, onClose }) {
+	const [doc, setDoc] = useState(null);
+	useEffect(() => {
+		if (!path) return;
+		setDoc(null);
+		api(`/projects/${projectId}/file?path=${encodeURIComponent(path)}`).then(
+			(data) => setDoc({ text: data.content ?? "" }),
+			() => setDoc({ missing: true }),
+		);
+	}, [projectId, path]);
+	return html`<${Sheet} open=${Boolean(path)} title=${path ?? ""} onClose=${onClose}>
+		<div class="sheet-body">
+			${!doc
+				? html`<div class="empty"><span class="spinner"></span></div>`
+				: doc.missing
+					? html`<div class="callout">There's no ${path} yet. Ask the agent for this stage and it will write one.</div>`
+					: html`<${PlainDoc} text=${doc.text} />`}
+		</div>
+	<//>`;
+}
+
+function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish }) {
+	const [data, setData] = useState(null);
+	const [open, setOpen] = useState(() => readStored("agency.journey") !== "closed");
+	const [selected, setSelected] = useState(null);
+	const [busy, setBusy] = useState(false);
+	const [doc, setDoc] = useState(null);
+	const load = () => api(`/projects/${project.id}/journey`).then(setData, () => {});
+	useEffect(() => {
+		load();
+	}, [project.id, refresh, project.published]);
+	if (!data) return null;
+	const isDone = (key) => (key === "publish" ? Boolean(project.published) : Boolean(data.stages[key]?.done)) && !(key === "approve" && data.approvalStale);
+	const current = JOURNEY.find((s) => !isDone(s.key)) ?? JOURNEY.at(-1);
+	const stage = JOURNEY.find((s) => s.key === selected) ?? current;
+	const doneCount = JOURNEY.filter((s) => isDone(s.key)).length;
+	const toggle = () => {
+		writeStored("agency.journey", open ? "closed" : "open");
+		setOpen(!open);
+	};
+	const mark = async (key, done) => {
+		setBusy(true);
+		try {
+			setData(await api(`/projects/${project.id}/journey/${key}`, { method: "PUT", body: { done } }));
+			if (done) setSelected(null);
+		} catch (err) {
+			toast(err.message, "error");
+		}
+		setBusy(false);
+	};
+	const askApproval = async () => {
+		setBusy(true);
+		try {
+			const { asked } = await api(`/projects/${project.id}/journey/request-approval`, { method: "POST", body: {} });
+			toast(asked ? `Asked ${asked === 1 ? "an admin" : `${asked} admins`} by email` : "No email is set up, so tell an admin yourself", asked ? "success" : "error");
+		} catch (err) {
+			toast(err.message, "error");
+		}
+		setBusy(false);
+	};
+	const info = data.stages[stage.key];
+	const approveWhat = data.requireApproval
+		? "An admin tries the app, reads the spec and the checks, and approves this exact version for publishing. If the app changes afterwards, it needs approving again."
+		: "The owner looks over the app, the spec and the checks, and approves it as ready to publish.";
+	return html`<div class=${`journey${open ? " open" : ""}`}>
+		<button class="journey-head" onClick=${toggle} aria-expanded=${open}>
+			${icon("wand")} <strong>Journey</strong>
+			<span class="faint">${doneCount === JOURNEY.length ? "All done" : `Step ${JOURNEY.indexOf(current) + 1} of ${JOURNEY.length}: ${current.title}`}</span>
+			<span class="grow"></span>
+			${icon("chevronDown", open ? "flip" : "")}
+		</button>
+		${open &&
+		html`<ol class="journey-steps">
+				${JOURNEY.map(
+					(s, i) => html`<li>
+						<button
+							class=${`journey-step${isDone(s.key) ? " done" : ""}${s === current ? " current" : ""}`}
+							aria-pressed=${s === stage}
+							title=${s.title}
+							onClick=${() => setSelected(s.key)}
+						>
+							<span class="num">${isDone(s.key) ? icon("check") : i + 1}</span>
+							${(s === stage || s === current) && html`<span class="label">${s.title}</span>`}
+						</button>
+					</li>`,
+				)}
+			</ol>
+			<div class="journey-card">
+				<p>${stage.key === "approve" ? approveWhat : stage.what}</p>
+				${info?.done && html`<p class="faint">Done by ${info.by ?? "someone"}, ${timeAgo(info.at)}</p>`}
+				${stage.key === "approve" && data.approvalStale && html`<div class="callout">${icon("alert")} The app changed after it was approved. It needs approving again before it's published.</div>`}
+				<div class="row journey-actions">
+					${stage.ask &&
+					canEdit &&
+					html`<button class="btn primary sm" disabled=${running || sending} onClick=${() => onAsk(stage.ask)}>${icon("sparkles")} ${stage.ask.label}</button>`}
+					${stage.doc && html`<button class="btn sm" onClick=${() => setDoc(stage.doc)}>${icon("file")} Read ${stage.doc}</button>`}
+					${stage.key === "approve" &&
+					(data.canApprove
+						? html`<button class="btn primary sm" disabled=${busy || running} onClick=${() => mark("approve", true)}>${icon("check")} Approve this version</button>`
+						: canEdit && html`<button class="btn primary sm" disabled=${busy} onClick=${askApproval}>${icon("mail")} Ask for approval</button>`)}
+					${stage.key === "publish" && canEdit && html`<button class="btn primary sm" onClick=${onPublish}>${icon("globe")} Open Publish</button>`}
+					${canEdit &&
+					stage.key !== "approve" &&
+					stage.key !== "publish" &&
+					(info?.done
+						? html`<button class="btn sm" disabled=${busy} onClick=${() => mark(stage.key, false)}>Reopen</button>`
+						: html`<button class="btn sm" disabled=${busy} onClick=${() => mark(stage.key, true)}>${icon("check")} Mark done</button>`)}
+					${stage.key === "approve" && info?.done && !data.approvalStale && data.canApprove && html`<button class="btn sm" disabled=${busy} onClick=${() => mark("approve", false)}>Withdraw approval</button>`}
+				</div>
+			</div>`}
+		<${DocSheet} projectId=${project.id} path=${doc} onClose=${() => setDoc(null)} />
+	</div>`;
+}
+
 function Builder({ id }) {
 	const [project, setProject] = useState(null);
 	const [items, setItems] = useState([]);
@@ -821,6 +1003,8 @@ function Builder({ id }) {
 	const [device, setDevice] = useState("desktop");
 	const [previewKey, setPreviewKey] = useState(0);
 	const [restored, setRestored] = useState(0);
+	// Bumped when the agent finishes a turn, so the journey sees new versions.
+	const [settled, setSettled] = useState(0);
 	const scroller = useRef(null);
 	// "Change this": picking an element or area in the preview (preview-select.js inside the iframe).
 	const frame = useRef(null);
@@ -847,6 +1031,7 @@ function Builder({ id }) {
 				if (event.type === "agent_start") setRunning(true);
 				if (event.type === "agent_settled") {
 					setRunning(false);
+					setSettled((n) => n + 1);
 					setPreviewKey((k) => k + 1);
 					setFresh(true);
 				}
@@ -1016,6 +1201,12 @@ function Builder({ id }) {
 		setMode("auto");
 		send({ message: "The plan looks good. Build it.", mode: "auto" });
 	};
+	// A journey stage asks the agent for its part in the matching mode.
+	const askForStage = (ask) => {
+		setMode(ask.mode);
+		send({ message: ask.message, mode: ask.mode });
+		if (phone) setTab("chat");
+	};
 	const dragHasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
 
 	if (!project) {
@@ -1088,6 +1279,15 @@ function Builder({ id }) {
 				}}
 			>
 				${dragging && html`<div class="drop-overlay">${icon("paperclip")}<span>Drop files to attach</span></div>`}
+				<${Journey}
+					project=${project}
+					canEdit=${canEdit}
+					running=${running}
+					sending=${sending}
+					refresh=${settled}
+					onAsk=${askForStage}
+					onPublish=${() => setPanel("publish")}
+				/>
 				<div class="messages" ref=${scroller}>
 					${items.length === 0 &&
 					html`<div class="chat-empty">
@@ -3617,6 +3817,43 @@ function EmailSettings() {
 }
 
 // Settings sections, grouped the usual way: what is yours, then what the whole organization shares.
+/** Whether publishing needs an admin's approval of the exact version (the journey's Approve stage). */
+function PublishingSettings() {
+	const [data, setData] = useState(null);
+	const [error, setError] = useState("");
+	useEffect(() => {
+		api("/settings/journey").then(setData, (err) => setError(err.message));
+	}, []);
+	const save = async (requireApproval) => {
+		const before = data;
+		setData({ ...data, requireApproval });
+		try {
+			setData(await api("/settings/journey", { method: "PUT", body: { requireApproval } }));
+		} catch (err) {
+			setData(before);
+			toast(err.message, "error");
+		}
+	};
+	return html`<div class="page">
+		<header class="page-head">
+			<h1>Publishing</h1>
+			<p>Every app shows a journey above its chat: describe it, plan, build, check, approve and publish. It guides people who have never built software; this setting decides whether the approval step is required.</p>
+		</header>
+		${error && html`<p class="error">${error}</p>`}
+		${data === null
+			? !error && html`<div class="empty"><span class="spinner"></span></div>`
+			: html`<div class="card stack-sm" style="padding:16px">
+					<label class="check">
+						<input type="checkbox" checked=${data.requireApproval} onChange=${(e) => save(e.target.checked)} />
+						Require an admin's approval before an app is published
+					</label>
+					<p class="faint" style="font-size:13px;margin:0">
+						An admin approves the exact version to publish from the app's journey. If the app changes afterwards, it needs approving again. Members can ask for approval, which emails the admins. Apps already live stay live, and rolling back to an earlier published version needs no new approval.
+					</p>
+				</div>`}
+	</div>`;
+}
+
 const SETTINGS_GROUPS = [
 	{
 		label: "Account",
@@ -3632,6 +3869,7 @@ const SETTINGS_GROUPS = [
 			{ key: "org-skills", label: "Skills", icon: "sparkles" },
 			{ key: "team", label: "Team", icon: "users", admin: true },
 			{ key: "models", label: "Models", icon: "cpu", admin: true },
+			{ key: "publishing", label: "Publishing", icon: "globe", admin: true },
 			{ key: "sso", label: "Single sign-on", icon: "lock", admin: true },
 			{ key: "github", label: "GitHub", icon: "github", admin: true },
 			{ key: "email", label: "Email", icon: "mail", admin: true },
@@ -3652,6 +3890,7 @@ function Settings({ user, section, onUsageChange }) {
 		connections: () => html`<${Connections} user=${user} />`,
 		team: () => html`<${Team} user=${user} onChange=${onUsageChange} />`,
 		models: () => html`<${ModelSettings} />`,
+		publishing: () => html`<${PublishingSettings} />`,
 		sso: () => html`<${OrgSettings} key="sso" part="sso" />`,
 		github: () => html`<${OrgSettings} key="github" part="github" />`,
 		email: () => html`<${EmailSettings} />`,

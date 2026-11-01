@@ -12,6 +12,15 @@ Everything that isn't an app lives under **Settings**, grouped like most workspa
 
 Under **Settings > Organization > Models** an admin sees every Claude model the deploy's provider offers (Claude API or Bedrock), ticks the ones members may use and picks the organization default. Until then only the model the deploy was set up with is allowed. In the builder chat, members pick one of the allowed models and a mode: **Auto** builds right away (the default), **Plan** proposes a plan and waits for "Build this plan", **Chat** answers and discusses without changing files. Plan and Chat give the agent read-only tools (plus the organization data tools). Each message is charged to the member's budget at the price of the model that answered.
 
+## The journey and approval before publishing
+
+Every app shows a **Journey** above its chat, for people who have never built software: **Describe** (the agent asks questions and writes the spec in `SPEC.md`), **Plan** (it proposes how it will build it, in Plan mode), **Build**, **Check** (it tests the app against every point in the spec, fixes what fails and writes the results in `CHECKS.md`, with things to try by hand), **Approve** and **Publish**. Each stage explains what happens, has a button that asks the agent for its part in the right mode, and is marked done by an editor; the spec and the checks open from the journey. The steps are a guide: people can still just chat.
+
+Under **Settings > Organization > Publishing** an admin can require approval before publishing. Then only an admin can approve, and an app can be published only in the exact version an admin approved: approving saves the current files as a version, and if anything changes afterwards (an agent turn, a code edit, a restore) the journey says so and it needs approving again. Editors press **Ask for approval** to email the admins. Apps already live stay live, and rolling back to an earlier published version needs no new approval. With the setting off, the owner approves, and publishing doesn't wait for it.
+
+<img src="assets/screenshots/journey.png" alt="The builder with the journey above the chat: four stages done, Approve current, and an Ask for approval button" width="100%">
+<img src="assets/screenshots/publishing.png" alt="Settings, Publishing: Require an admin's approval before an app is published" width="100%">
+
 ## Sharing apps
 
 Every app has an owner (whoever created it); admins can do everything with every app. In the builder's **Share** sheet the owner picks what the rest of the team gets (nothing, view, or edit) and adds people as viewers or editors:

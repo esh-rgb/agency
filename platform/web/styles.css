@@ -3982,3 +3982,156 @@ p.small {
 		margin-left: 30px;
 	}
 }
+
+/* ------------------------------------------------------------------------- */
+/* Journey: the stages of an app above the chat */
+
+.journey {
+	margin: 12px 12px 0;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
+	box-shadow: var(--shadow-sm);
+	flex: none;
+}
+
+.journey-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 10px 12px;
+	border: 0;
+	background: none;
+	color: var(--text);
+	font: inherit;
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.journey-head .faint {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.journey-head .icon.flip {
+	transform: rotate(180deg);
+}
+
+.journey-steps {
+	display: flex;
+	gap: 4px;
+	margin: 0;
+	padding: 0 8px 8px;
+	list-style: none;
+	overflow-x: auto;
+}
+
+.journey-step {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: none;
+	color: var(--text-2);
+	font: inherit;
+	font-size: 12px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.journey-step .num {
+	display: grid;
+	place-items: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--surface-2);
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.journey-step .num .icon {
+	width: 12px;
+	height: 12px;
+}
+
+.journey-step.done .num {
+	background: var(--success-soft);
+	color: var(--success);
+}
+
+.journey-step.current .num {
+	background: var(--accent);
+	color: var(--accent-text);
+}
+
+.journey-step[aria-pressed="true"] {
+	border-color: var(--border-strong);
+	background: var(--surface-2);
+	color: var(--text);
+}
+
+.journey-card {
+	padding: 4px 12px 12px;
+	border-top: 1px solid var(--border);
+	font-size: 13px;
+	color: var(--text-2);
+}
+
+.journey-card p {
+	margin: 8px 0;
+}
+
+.journey-card .callout {
+	margin-bottom: 8px;
+}
+
+.journey-actions {
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.doc {
+	font-size: 14px;
+	line-height: 1.55;
+	color: var(--text);
+	word-break: break-word;
+}
+
+.doc h3 {
+	margin: 0 0 8px;
+	font-size: 17px;
+}
+
+.doc h4 {
+	margin: 18px 0 6px;
+	font-size: 14px;
+}
+
+.doc p {
+	margin: 0 0 6px;
+	color: var(--text-2);
+}
+
+.doc-bullet {
+	position: relative;
+	padding-left: 16px;
+	margin-bottom: 4px;
+	color: var(--text-2);
+}
+
+.doc-bullet::before {
+	content: "";
+	position: absolute;
+	left: 4px;
+	top: 0.65em;
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--text-3);
+}

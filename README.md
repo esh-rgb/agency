@@ -123,6 +123,7 @@ Everything runs on one machine you control: a single AWS instance with Docker, s
 | Code tab with an in-browser editor | Read-only by default; connections can be limited to specific apps | Push to your GitHub organization, automatically for new apps | Personal and organization skills |
 | Auto, Plan and Chat modes, with a model picker; apps are named, and get their address, from the first prompt | Each app gets its own Postgres database, with a Data tab | Nightly backups to S3 | Allowed Claude models and the organization default |
 | Phone layout, light and dark; Axel strolls on a waiting page while an app starts | | Published apps nobody opens for a week go offline (the owner gets an email) and start again on the next visit | One AWS server, or a server plus an ECS cluster that scales; idle apps sleep |
+| A journey above the chat guides non-developers: describe (a written spec), plan, build, check against the spec, approve, publish | | Optional admin approval of the exact version before it's published | |
 
 What's next is in the [roadmap](PLAN.md): per-person connector sign-in, sandbox hardening (gVisor or Firecracker, egress allowlist).
 

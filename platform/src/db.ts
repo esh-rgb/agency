@@ -157,6 +157,19 @@ create unique index if not exists user_skills_org_name on user_skills (name) whe
 -- visit (only while the platform runs), and when it was taken down. Its next visit starts it again.
 alter table projects add column if not exists app_idle_minutes integer not null default 0;
 alter table projects add column if not exists app_asleep_since timestamptz;
+
+-- The builder's journey (journey.ts): who finished which stage of an app, and at which version.
+-- The latest row per stage wins; done = false reopens a stage.
+create table if not exists journey_events (
+	id serial primary key,
+	project_id uuid not null references projects(id) on delete cascade,
+	stage text not null,
+	done boolean not null,
+	git_commit text not null default '',
+	user_id uuid references users(id) on delete set null,
+	created_at timestamptz not null default now()
+);
+create index if not exists journey_events_project on journey_events (project_id, stage, id);
 `;
 
 export async function migrate(): Promise<void> {
