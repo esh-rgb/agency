@@ -8,6 +8,15 @@ What admins set up, and how members share the apps they build.
 
 Everything that isn't an app lives under **Settings**, grouped like most workspace tools: **Account** (My skills, Usage) and **Organization** (Connections, Skills, and for admins Team, Models, Single sign-on, GitHub). On a phone, Settings opens as a list of sections. Old links such as `#/connections` still work.
 
+## Language
+
+Agency's screens come in English and Hebrew. Each person picks a language under **Settings > Account > Language**, remembered in their browser; until they do, the browser's language decides, so people whose browser is in Hebrew get Hebrew without changing anything. Hebrew turns the whole interface right to left, while code, addresses and logs stay left to right. The screens members use every day are translated (sign-in, home, the builder and chat, versions, sharing, publishing, usage); admin settings, the GitHub panel and messages from the server are still in English. The agent answers in the language people write to it, and builds right-to-left apps when they write in Hebrew.
+
+To add a language, copy `platform/web/i18n-he.js`, translate the values, and add it to `LANGUAGES` in `platform/web/i18n.js` (with `dir: "rtl"` for a right-to-left language). Texts in `app.js` are wrapped in `t("...")`, and anything a dictionary is missing stays in English.
+
+<img src="assets/screenshots/hebrew-home.png" alt="The home screen in Hebrew, right to left" width="100%">
+<img src="assets/screenshots/hebrew-builder.png" alt="The builder in Hebrew with the Share sheet open" width="100%">
+
 ## Models and chat modes
 
 Under **Settings > Organization > Models** an admin sees every Claude model the deploy's provider offers (Claude API or Bedrock), ticks the ones members may use and picks the organization default. Until then only the model the deploy was set up with is allowed. In the builder chat, members pick one of the allowed models and a mode: **Auto** builds right away (the default), **Plan** proposes a plan and waits for "Build this plan", **Chat** answers and discusses without changing files. Plan and Chat give the agent read-only tools (plus the organization data tools). Each message is charged to the member's budget at the price of the model that answered.

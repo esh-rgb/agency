@@ -1,6 +1,7 @@
 import htm from "htm";
 import { h, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { lang, LANGUAGES, plural, setLanguage, t } from "./i18n.js";
 
 const html = htm.bind(h);
 
@@ -102,14 +103,14 @@ function userItem(content) {
 
 function toolLabel(name, args = {}) {
 	const path = args.path ?? args.file_path;
-	if (name === "write") return `Wrote ${path}`;
-	if (name === "edit") return `Edited ${path}`;
-	if (name === "read") return `Read ${path}`;
-	if (name === "bash") return `Ran ${String(args.command ?? "").split("\n")[0].slice(0, 80)}`;
-	if (name === "ls" || name === "find" || name === "grep") return `Searched ${path ?? args.pattern ?? ""}`;
+	if (name === "write") return t("Wrote {path}", { path });
+	if (name === "edit") return t("Edited {path}", { path });
+	if (name === "read") return t("Read {path}", { path });
+	if (name === "bash") return t("Ran {command}", { command: String(args.command ?? "").split("\n")[0].slice(0, 80) });
+	if (name === "ls" || name === "find" || name === "grep") return t("Searched {path}", { path: path ?? args.pattern ?? "" });
 	if (name.startsWith("mcp__agency__")) {
 		const tool = name.slice("mcp__agency__".length).replace(/_/g, " ");
-		return `Data: ${tool}${args.connection ? ` (${args.connection})` : ""}`;
+		return t("Data: {tool}", { tool }) + (args.connection ? ` (${args.connection})` : "");
 	}
 	return name;
 }
@@ -124,7 +125,7 @@ function assistantItem(message) {
 			.join(""),
 		thinking: blocks.some((b) => b.type === "thinking"),
 		tools: blocks.filter((b) => b.type === "toolCall").map((b) => ({ id: b.id, label: toolLabel(b.name, b.arguments), status: "done" })),
-		error: message.stopReason === "error" ? message.errorMessage || "The model returned an error" : null,
+		error: message.stopReason === "error" ? message.errorMessage || t("The model returned an error") : null,
 	};
 }
 
@@ -249,7 +250,7 @@ function icon(name, className = "") {
 
 function timeAgo(value) {
 	const seconds = (new Date(value).getTime() - Date.now()) / 1000;
-	const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+	const format = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
 	const steps = [
 		[60, "second"],
 		[60, "minute"],
@@ -279,7 +280,7 @@ function money(value) {
 }
 
 function shortDate(value) {
-	return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+	return new Date(value).toLocaleDateString(lang, { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 /** A thin bar of spend against budget. Turns amber past 80% and red when the budget is used up. */
@@ -292,7 +293,7 @@ function Meter({ spent, budget, unlimited }) {
 }
 
 function spendLabel(usage) {
-	return usage.unlimited ? `${money(usage.spentUsd)} · unlimited` : `${money(usage.spentUsd)} of ${money(usage.budgetUsd)}`;
+	return usage.unlimited ? t("{spent} · unlimited", { spent: money(usage.spentUsd) }) : t("{spent} of {budget}", { spent: money(usage.spentUsd), budget: money(usage.budgetUsd) });
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +389,7 @@ function Sheet({ open, title, onClose, children }) {
 			<div class="sheet-head" onPointerDown=${onPointerDown} onPointerMove=${onPointerMove} onPointerUp=${onPointerUp} onPointerCancel=${onPointerUp}>
 				<span class="grabber" aria-hidden="true"></span>
 				<h3>${title}</h3>
-				<button class="icon-btn" title="Close" onClick=${onClose}>${icon("x")}</button>
+				<button class="icon-btn" title=${t("Close")} onClick=${onClose}>${icon("x")}</button>
 			</div>
 			${children}
 		</aside>`;
@@ -441,22 +442,22 @@ function Login({ onLogin }) {
 		<form class="card stack" onSubmit=${submit}>
 			<div>
 				<div class="brand"><img src="/static/logo.png" alt="" /> <b>Agency</b></div>
-				<h1>Welcome back</h1>
-				<p class="lead">Sign in to build with your team's data.</p>
+				<h1>${t("Welcome back")}</h1>
+				<p class="lead">${t("Sign in to build with your team's data.")}</p>
 			</div>
 			${options?.sso &&
-			html`<a class="btn primary block" href=${ssoHref}>${icon("key")} Sign in with ${options.sso.label}</a>`}
-			${options?.sso && passwordOpen && html`<div class="divider"><span>or</span></div>`}
+			html`<a class="btn primary block" href=${ssoHref}>${icon("key")} ${t("Sign in with {provider}", { provider: options.sso.label })}</a>`}
+			${options?.sso && passwordOpen && html`<div class="divider"><span>${t("or")}</span></div>`}
 			${!passwordOpen &&
 			html`${error && html`<div class="error">${error}</div>`}
-				<button type="button" class="link-btn center" onClick=${() => setShowPassword(true)}>Admin sign-in with a password</button>`}
+				<button type="button" class="link-btn center" onClick=${() => setShowPassword(true)}>${t("Admin sign-in with a password")}</button>`}
 			${passwordOpen &&
 			html`<label class="field">
-				<span>Email</span>
+				<span>${t("Email")}</span>
 				<input class="input" type="email" value=${email} onInput=${(e) => setEmail(e.target.value)} autocomplete="username" required autofocus />
 			</label>
 			<label class="field">
-				<span>Password</span>
+				<span>${t("Password")}</span>
 				<input
 					class="input"
 					type="password"
@@ -467,7 +468,7 @@ function Login({ onLogin }) {
 				/>
 			</label>
 			${error && html`<div class="error">${error}</div>`}
-			<button class=${`btn block ${options?.sso ? "" : "primary"}`} disabled=${busy}>${busy ? html`<span class="spinner"></span>` : "Sign in"}</button>`}
+			<button class=${`btn block ${options?.sso ? "" : "primary"}`} disabled=${busy}>${busy ? html`<span class="spinner"></span>` : t("Sign in")}</button>`}
 		</form>
 	</div>`;
 }
@@ -476,7 +477,7 @@ const IDEAS = [
 	"A dashboard of open deals from our CRM, grouped by stage with totals",
 	"An internal tool to search customers and see their latest orders",
 	"A form where the team logs expenses, with a monthly summary chart",
-];
+].map((idea) => t(idea));
 
 function Home() {
 	const [projects, setProjects] = useState(null);
@@ -503,23 +504,24 @@ function Home() {
 	};
 	return html`<div class="page">
 		<section class="hero">
-			<h1>What should we build?</h1>
-			<p>Describe an app in plain words. Agency builds it on your organization's data and runs it live.</p>
+			<h1>${t("What should we build?")}</h1>
+			<p>${t("Describe an app in plain words. Agency builds it on your organization's data and runs it live.")}</p>
 			<div class="composer">
 				<textarea
 					ref=${field}
-					placeholder="A dashboard of open deals from our CRM..."
+					dir="auto"
+					placeholder=${t("A dashboard of open deals from our CRM...")}
 					value=${prompt}
 					onInput=${(e) => setPrompt(e.target.value)}
 					onKeyDown=${(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && create()}
 					autofocus
 				></textarea>
 				<div class="bar">
-					<input class="name" placeholder="App name (optional)" value=${name} onInput=${(e) => setName(e.target.value)} />
+					<input class="name" placeholder=${t("App name (optional)")} value=${name} onInput=${(e) => setName(e.target.value)} />
 					<span class="grow"></span>
 					<span class="kbd hide-sm">⌘ ↵</span>
 					<button class="btn primary" disabled=${busy || !prompt.trim()} onClick=${create}>
-						${busy ? html`<span class="spinner"></span> Creating` : html`Build it ${icon("arrowUp")}`}
+						${busy ? html`<span class="spinner"></span> ${t("Creating")}` : html`${t("Build it")} ${icon("arrowUp")}`}
 					</button>
 				</div>
 			</div>
@@ -538,26 +540,26 @@ function Home() {
 			</div>
 			${error && html`<p class="error">${error}</p>`}
 		</section>
-		<h2 class="section-title">Apps ${projects?.length ? html`<span class="faint">${projects.length}</span>` : null}</h2>
+		<h2 class="section-title">${t("Apps")} ${projects?.length ? html`<span class="faint">${projects.length}</span>` : null}</h2>
 		${projects === null
 			? html`<div class="empty"><span class="spinner"></span></div>`
 			: projects.length === 0
-				? html`<div class="card empty">${icon("apps")} No apps yet. Describe one above to get started.</div>`
+				? html`<div class="card empty">${icon("apps")} ${t("No apps yet. Describe one above to get started.")}</div>`
 				: html`<div class="grid">
 						${projects.map(
 							(p, i) => html`<a class="project-card" href=${`#/p/${p.id}`} style=${`--i:${i};--hue:${hueOf(p.name)}`}>
 								<div class="thumb">
 									<span class="initial">${p.name.trim().slice(0, 1).toUpperCase()}</span>
 									${p.agentRunning
-										? html`<span class="badge accent"><span class="dot pulse"></span>Building</span>`
+										? html`<span class="badge accent"><span class="dot pulse"></span>${t("Building")}</span>`
 										: p.appAsleepSince
-											? html`<span class="badge" title="Taken offline after days without visits. The next visit starts it again.">${icon("moon")} Asleep v${p.published}</span>`
+											? html`<span class="badge" title=${t("Taken offline after days without visits. The next visit starts it again.")}>${icon("moon")} ${t("Asleep v{version}", { version: p.published })}</span>`
 											: p.published
-												? html`<span class="badge live"><span class="dot"></span>Live v${p.published}</span>`
-												: html`<span class="badge">Draft</span>`}
+												? html`<span class="badge live"><span class="dot"></span>${t("Live v{version}", { version: p.published })}</span>`
+												: html`<span class="badge">${t("Draft")}</span>`}
 								</div>
 								<div class="meta">
-									<strong>${p.name} ${p.role === "viewer" && html`<span class="badge">View only</span>`}</strong>
+									<strong>${p.name} ${p.role === "viewer" && html`<span class="badge">${t("View only")}</span>`}</strong>
 									<div class="host">${p.slug}.${location.hostname}</div>
 								</div>
 							</a>`,
@@ -579,18 +581,18 @@ function ChatItem({ item }) {
 		const attached = item.images.length > 0 || item.files.length > 0;
 		return html`<div class=${`msg msg-user-wrap${item.selection ? " picked" : ""}`}>
 			${item.selection &&
-			html`<span class="pick-chip" title=${`Selected on ${item.selection.page}`}>${icon("select")}<span>${item.selection.label}</span></span>`}
+			html`<span class="pick-chip" title=${t("Selected on {page}", { page: item.selection.page })}>${icon("select")}<span>${item.selection.label}</span></span>`}
 			${attached &&
 			html`<div class="msg-attachments">
 				${item.images.map((src) => html`<a class="attach-thumb" href=${src} target="_blank" rel="noopener"><img src=${src} alt="" /></a>`)}
 				${item.files.map((path) => html`<span class="attach-chip" title=${path}>${icon("file")}<span>${path.split("/").pop()}</span></span>`)}
 			</div>`}
-			${item.text && html`<div class="msg-user">${item.text}</div>`}
+			${item.text && html`<div class="msg-user" dir="auto">${item.text}</div>`}
 		</div>`;
 	}
 	return html`<div class="msg">
-		${item.thinking && !item.text && item.tools.length === 0 && html`<div class="thinking"><span class="spinner"></span> Thinking</div>`}
-		${item.text && html`<div class="msg-assistant">${item.text}</div>`}
+		${item.thinking && !item.text && item.tools.length === 0 && html`<div class="thinking"><span class="spinner"></span> ${t("Thinking")}</div>`}
+		${item.text && html`<div class="msg-assistant" dir="auto">${item.text}</div>`}
 		${item.tools.length > 0 &&
 		html`<div class="tools">
 			${item.tools.map(
@@ -647,16 +649,16 @@ function PickPrompt({ pick, frame, container, docked, running, onSend, onCancel 
 		const ok = await onSend(message);
 		if (!ok) setBusy(false);
 	};
-	return html`<div class=${`pick-prompt${docked ? " docked" : ""}`} ref=${box} role="dialog" aria-label="Change the selected part">
+	return html`<div class=${`pick-prompt${docked ? " docked" : ""}`} ref=${box} role="dialog" aria-label=${t("Change the selected part")}>
 		<div class="pick-head">
 			${thumb ? html`<img class="pick-thumb" src=${thumb} alt="" />` : html`<span class="pick-thumb empty">${icon("select")}</span>`}
 			<span class="pick-label" title=${pick.selection.target?.selector}>${pick.selection.label}</span>
-			<button class="icon-btn sm" title="Cancel" onClick=${onCancel}>${icon("x")}</button>
+			<button class="icon-btn sm" title=${t("Cancel")} onClick=${onCancel}>${icon("x")}</button>
 		</div>
 		<textarea
 			ref=${field}
 			rows="2"
-			placeholder=${running ? "What should change here? It runs after the current step." : "What should change here?"}
+			placeholder=${running ? t("What should change here? It runs after the current step.") : t("What should change here?")}
 			enterkeyhint="send"
 			value=${text}
 			onInput=${(e) => setText(e.target.value)}
@@ -672,9 +674,9 @@ function PickPrompt({ pick, frame, container, docked, running, onSend, onCancel 
 			}}
 		></textarea>
 		<div class="pick-bar">
-			<span class="faint hide-phone">The agent gets this part's code and a screenshot</span>
+			<span class="faint hide-phone">${t("The agent gets this part's code and a screenshot")}</span>
 			<span class="grow"></span>
-			<button class="btn primary send" title="Send" disabled=${!text.trim() || busy} onClick=${submit}>
+			<button class="btn primary send" title=${t("Send")} disabled=${!text.trim() || busy} onClick=${submit}>
 				${busy ? html`<span class="spinner"></span>` : icon("arrowUp")}
 			</button>
 		</div>
@@ -695,9 +697,9 @@ function pastedName(file) {
 
 // How the agent answers: Auto builds, Plan proposes a plan to approve first, Chat only talks.
 const CHAT_MODES = [
-	{ key: "auto", label: "Auto", title: "Builds and changes the app right away", placeholder: "Ask for a change..." },
-	{ key: "plan", label: "Plan", title: "Proposes a plan and waits for your approval before building", placeholder: "Describe what to plan..." },
-	{ key: "chat", label: "Chat", title: "Answers questions and discusses ideas without changing the app", placeholder: "Ask about the app..." },
+	{ key: "auto", label: t("Auto"), title: t("Builds and changes the app right away"), placeholder: t("Ask for a change...") },
+	{ key: "plan", label: t("Plan"), title: t("Proposes a plan and waits for your approval before building"), placeholder: t("Describe what to plan...") },
+	{ key: "chat", label: t("Chat"), title: t("Answers questions and discusses ideas without changing the app"), placeholder: t("Ask about the app...") },
 ];
 
 /** "Claude Opus 4.8" reads as "Opus 4.8" in the narrow chat composer. */
@@ -739,22 +741,22 @@ function ComposerOptions({ mode, onMode, models, model, onModel }) {
 	const index = CHAT_MODES.findIndex((m) => m.key === mode);
 	const selected = models.find((m) => m.key === model);
 	return html`<div class="composer-opts">
-		<div class="seg mode-seg" role="tablist" aria-label="Chat mode" style=${`--count:${CHAT_MODES.length};--index:${index}`}>
+		<div class="seg mode-seg" role="tablist" aria-label=${t("Chat mode")} style=${`--count:${CHAT_MODES.length};--index:${index}`}>
 			${CHAT_MODES.map(
 				(m) => html`<button role="tab" aria-selected=${m.key === mode} title=${m.title} onClick=${() => onMode(m.key)}>${m.label}</button>`,
 			)}
 		</div>
 		${selected &&
 		(models.length > 1
-			? html`<label class="model-pick" title="Model">
+			? html`<label class="model-pick" title=${t("Model")}>
 					${icon("cpu")}
 					<span>${shortModelName(selected.name)}</span>
 					${icon("chevronDown", "caret")}
-					<select aria-label="Model" value=${model} onChange=${(e) => onModel(e.target.value)}>
+					<select aria-label=${t("Model")} value=${model} onChange=${(e) => onModel(e.target.value)}>
 						${models.map((m) => html`<option value=${m.key}>${m.name}</option>`)}
 					</select>
 				</label>`
-			: html`<span class="model-pick static" title="Model chosen by your admin">${icon("cpu")}<span>${shortModelName(selected.name)}</span></span>`)}
+			: html`<span class="model-pick static" title=${t("Model chosen by your admin")}>${icon("cpu")}<span>${shortModelName(selected.name)}</span></span>`)}
 	</div>`;
 }
 
@@ -782,12 +784,12 @@ function AppTitle({ project, canEdit, onRenamed }) {
 		}
 	};
 	if (!editing)
-		return html`<h2><button class="title-btn" title="Rename. The address stays ${project.slug}." onClick=${start}>${project.name}</button></h2>`;
+		return html`<h2><button class="title-btn" title=${t("Rename. The address stays {slug}.", { slug: project.slug })} onClick=${start}>${project.name}</button></h2>`;
 	return html`<input
 		class="input title-input"
 		value=${value}
 		maxlength="60"
-		aria-label="App name"
+		aria-label=${t("App name")}
 		ref=${(el) => el && document.activeElement !== el && !done.current && (el.focus(), el.select())}
 		onInput=${(e) => setValue(e.target.value)}
 		onBlur=${save}
@@ -952,13 +954,13 @@ function Builder({ id }) {
 		const files = [...(list ?? [])];
 		if (files.length === 0) return;
 		const tooBig = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
-		setError(tooBig ? `${tooBig.name} is larger than 10 MB` : "");
+		setError(tooBig ? t("{name} is larger than 10 MB", { name: tooBig.name }) : "");
 		const added = files
 			.filter((file) => file.size <= MAX_ATTACHMENT_BYTES)
 			.map((file) => ({ key: ++attachmentKey, file, url: PREVIEWABLE.test(file.type) ? URL.createObjectURL(file) : null }));
 		setAttachments((current) => {
 			const next = [...current, ...added];
-			if (next.length > MAX_ATTACHMENTS) setError(`Attach at most ${MAX_ATTACHMENTS} files at a time`);
+			if (next.length > MAX_ATTACHMENTS) setError(t("Attach at most {count} files at a time", { count: MAX_ATTACHMENTS }));
 			for (const extra of next.slice(MAX_ATTACHMENTS)) if (extra.url) URL.revokeObjectURL(extra.url);
 			return next.slice(0, MAX_ATTACHMENTS);
 		});
@@ -1014,7 +1016,7 @@ function Builder({ id }) {
 	// Approving a plan switches to Auto, which builds it.
 	const buildPlan = () => {
 		setMode("auto");
-		send({ message: "The plan looks good. Build it.", mode: "auto" });
+		send({ message: t("The plan looks good. Build it."), mode: "auto" });
 	};
 	const dragHasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
 
@@ -1027,21 +1029,21 @@ function Builder({ id }) {
 	const view = !phone && tab === "chat" ? "preview" : tab;
 	const tabButton = (name, label, iconName, className = "") =>
 		html`<button role="tab" class=${className} aria-selected=${(phone ? tab : view) === name} onClick=${() => setTab(name)}>
-			${icon(iconName)} <span>${label}</span>${name === "preview" && fresh && phone && tab !== "preview" && html`<span class="dot accent-dot" title="Updated"></span>`}
+			${icon(iconName)} <span>${label}</span>${name === "preview" && fresh && phone && tab !== "preview" && html`<span class="dot accent-dot" title=${t("Updated")}></span>`}
 		</button>`;
 	const openFromMenu = (name) => setPanel(name);
 	const options = html`<${ComposerOptions} mode=${mode} onMode=${setMode} models=${models} model=${model} onModel=${setModel} />`;
 	return html`<div class="builder">
 		<header class="topbar">
 			<div class="left">
-				<a class="icon-btn" href="#/" title="All apps">${icon("arrowLeft")}</a>
+				<a class="icon-btn" href="#/" title=${t("All apps")}>${icon("arrowLeft", "along-line")}</a>
 				<${AppTitle} project=${project} canEdit=${canEdit} onRenamed=${setProject} />
 				${running
-					? html`<span class="status"><span class="dot pulse"></span>Working</span>`
+					? html`<span class="status"><span class="dot pulse"></span>${t("Working")}</span>`
 					: project.appAsleepSince
-						? html`<span class="badge hide-sm">${icon("moon")} Asleep v${project.published}</span>`
+						? html`<span class="badge hide-sm">${icon("moon")} ${t("Asleep v{version}", { version: project.published })}</span>`
 						: project.published
-							? html`<span class="badge live hide-sm"><span class="dot"></span>Live v${project.published}</span>`
+							? html`<span class="badge live hide-sm"><span class="dot"></span>${t("Live v{version}", { version: project.published })}</span>`
 							: null}
 			</div>
 			<div class="center">
@@ -1050,28 +1052,28 @@ function Builder({ id }) {
 					role="tablist"
 					style=${`--index-wide:${["preview", "code", "data"].indexOf(view)};--index-phone:${["chat", "preview", "code", "data"].indexOf(tab)}`}
 				>
-					${tabButton("chat", "Chat", "message", "only-phone")} ${tabButton("preview", "Preview", "eye")} ${tabButton("code", "Code", "code")}
-					${tabButton("data", "Data", "database")}
+					${tabButton("chat", t("Chat"), "message", "only-phone")} ${tabButton("preview", t("Preview"), "eye")} ${tabButton("code", t("Code"), "code")}
+					${tabButton("data", t("Data"), "database")}
 				</div>
 			</div>
 			<div class="right">
-				<button class="icon-btn hide-phone" title="Versions" aria-pressed=${panel === "versions"} onClick=${() => togglePanel("versions")}>
+				<button class="icon-btn hide-phone" title=${t("Versions")} aria-pressed=${panel === "versions"} onClick=${() => togglePanel("versions")}>
 					${icon("history")}
 				</button>
-				<button class="icon-btn hide-phone" title="Dev server log" aria-pressed=${panel === "logs"} onClick=${() => togglePanel("logs")}>
+				<button class="icon-btn hide-phone" title=${t("Dev server log")} aria-pressed=${panel === "logs"} onClick=${() => togglePanel("logs")}>
 					${icon("terminal")}
 				</button>
-				<button class="icon-btn hide-phone" title="GitHub" aria-pressed=${panel === "github"} onClick=${() => togglePanel("github")}>
+				<button class="icon-btn hide-phone" title=${t("GitHub")} aria-pressed=${panel === "github"} onClick=${() => togglePanel("github")}>
 					${icon("github")}
 				</button>
-				<button class="icon-btn hide-phone" title="Share" aria-pressed=${panel === "share"} onClick=${() => togglePanel("share")}>
+				<button class="icon-btn hide-phone" title=${t("Share")} aria-pressed=${panel === "share"} onClick=${() => togglePanel("share")}>
 					${icon("share")}
 				</button>
 				<span class="sep hide-phone"></span>
-				<button class="icon-btn only-phone" title="More" aria-pressed=${panel === "more"} onClick=${() => togglePanel("more")}>${icon("more")}</button>
+				<button class="icon-btn only-phone" title=${t("More")} aria-pressed=${panel === "more"} onClick=${() => togglePanel("more")}>${icon("more")}</button>
 				${canEdit
-					? html`<button class="btn primary sm" onClick=${() => togglePanel("publish")}>${icon("globe")} Publish</button>`
-					: html`<span class="badge">${icon("eye")} View only</span>`}
+					? html`<button class="btn primary sm" onClick=${() => togglePanel("publish")}>${icon("globe")} ${t("Publish")}</button>`
+					: html`<span class="badge">${icon("eye")} ${t("View only")}</span>`}
 			</div>
 		</header>
 		<div class="workbench" data-tab=${tab}>
@@ -1087,12 +1089,12 @@ function Builder({ id }) {
 					addFiles(e.dataTransfer.files);
 				}}
 			>
-				${dragging && html`<div class="drop-overlay">${icon("paperclip")}<span>Drop files to attach</span></div>`}
+				${dragging && html`<div class="drop-overlay">${icon("paperclip")}<span>${t("Drop files to attach")}</span></div>`}
 				<div class="messages" ref=${scroller}>
 					${items.length === 0 &&
 					html`<div class="chat-empty">
 						${icon("sparkles")}
-						<div>Describe what to build or change.<br />The agent edits the code and the preview updates.</div>
+						<div>${t("Describe what to build or change.")}<br />${t("The agent edits the code and the preview updates.")}</div>
 					</div>`}
 					${items.map((item) => html`<${ChatItem} item=${item} />`)}
 					${canEdit &&
@@ -1101,8 +1103,8 @@ function Builder({ id }) {
 					items.at(-1)?.kind === "assistant" &&
 					items.at(-1).text &&
 					html`<div class="plan-approve">
-						<button class="btn primary sm" disabled=${sending} onClick=${buildPlan}>${icon("play")} Build this plan</button>
-						<span class="faint">or reply to change it</span>
+						<button class="btn primary sm" disabled=${sending} onClick=${buildPlan}>${icon("play")} ${t("Build this plan")}</button>
+						<span class="faint">${t("or reply to change it")}</span>
 					</div>`}
 				</div>
 				${canEdit
@@ -1114,13 +1116,14 @@ function Builder({ id }) {
 							${attachments.map(
 								(a) => html`<div class=${`attach-pending${a.url ? " image" : ""}`} key=${a.key} title=${a.file.name}>
 									${a.url ? html`<img src=${a.url} alt="" />` : html`${icon("file")}<span class="attach-meta"><span class="attach-name">${a.file.name}</span><span class="faint">${bytes(a.file.size)}</span></span>`}
-									<button class="attach-remove" title=${`Remove ${a.file.name}`} onClick=${() => removeAttachment(a.key)}>${icon("x")}</button>
+									<button class="attach-remove" title=${t("Remove {name}", { name: a.file.name })} onClick=${() => removeAttachment(a.key)}>${icon("x")}</button>
 								</div>`,
 							)}
 						</div>`}
 						${phone && options}
 						<textarea
-							placeholder=${running ? "Add an instruction for after this step..." : CHAT_MODES.find((m) => m.key === mode).placeholder}
+							dir="auto"
+							placeholder=${running ? t("Add an instruction for after this step...") : CHAT_MODES.find((m) => m.key === mode).placeholder}
 							enterkeyhint="send"
 							value=${input}
 							onInput=${(e) => setInput(e.target.value)}
@@ -1148,51 +1151,51 @@ function Builder({ id }) {
 									e.target.value = "";
 								}}
 							/>
-							<button class="icon-btn attach-btn" title="Attach files or images" onClick=${() => picker.current?.click()}>${icon("paperclip")}</button>
+							<button class="icon-btn attach-btn" title=${t("Attach files or images")} onClick=${() => picker.current?.click()}>${icon("paperclip")}</button>
 							${phone ? null : options}
 							<span class="grow"></span>
 							${running &&
-							html`<button class="btn sm" onClick=${() => api(`/projects/${id}/abort`, { method: "POST" })}>${icon("stop")} Stop</button>`}
-							<button class="btn primary send" title="Send" disabled=${(!input.trim() && attachments.length === 0) || sending} onClick=${() => send()}>
+							html`<button class="btn sm" onClick=${() => api(`/projects/${id}/abort`, { method: "POST" })}>${icon("stop")} ${t("Stop")}</button>`}
+							<button class="btn primary send" title=${t("Send")} disabled=${(!input.trim() && attachments.length === 0) || sending} onClick=${() => send()}>
 								${sending ? html`<span class="spinner"></span>` : icon("arrowUp")}
 							</button>
 						</div>
 					</div>
 				</div>`
 					: html`<div class="chat-input">
-							<div class="callout">${icon("eye")} You can view this app. Ask its owner for edit access to change it.</div>
+							<div class="callout">${icon("eye")} ${t("You can view this app. Ask its owner for edit access to change it.")}</div>
 						</div>`}
 			</section>
 			<section class="stage">
 				<div class="preview" hidden=${view !== "preview"}>
 					<div class="chrome">
-						<button class="icon-btn" title="Reload preview" onClick=${() => setPreviewKey((k) => k + 1)}>${icon("refresh")}</button>
+						<button class="icon-btn" title=${t("Reload preview")} onClick=${() => setPreviewKey((k) => k + 1)}>${icon("refresh")}</button>
 						<div class="url">${project.previewUrl.startsWith("https") && icon("lock")}<span>${host}</span></div>
 						${canEdit &&
 						html`<button
 							class=${`icon-btn pick-btn${picking || pick ? " on" : ""}`}
-							title="Select something to change"
+							title=${t("Select something to change")}
 							aria-pressed=${picking || Boolean(pick)}
 							onClick=${togglePicking}
 						>
 							${icon("select")}
 						</button>`}
-						<button class="icon-btn hide-phone" title="Desktop width" aria-pressed=${device === "desktop"} onClick=${() => setDevice("desktop")}>
+						<button class="icon-btn hide-phone" title=${t("Desktop width")} aria-pressed=${device === "desktop"} onClick=${() => setDevice("desktop")}>
 							${icon("monitor")}
 						</button>
-						<button class="icon-btn hide-phone" title="Phone width" aria-pressed=${device === "mobile"} onClick=${() => setDevice("mobile")}>
+						<button class="icon-btn hide-phone" title=${t("Phone width")} aria-pressed=${device === "mobile"} onClick=${() => setDevice("mobile")}>
 							${icon("phone")}
 						</button>
-						<a class="icon-btn" href=${project.previewUrl} target="_blank" rel="noopener" title="Open in a new tab">${icon("external")}</a>
+						<a class="icon-btn" href=${project.previewUrl} target="_blank" rel="noopener" title=${t("Open in a new tab")}>${icon("external")}</a>
 					</div>
 					<div class=${`viewport ${phone ? "desktop" : device}`} ref=${stageView}>
-						<iframe key=${previewKey} ref=${frame} src=${project.previewUrl} title="App preview"></iframe>
+						<iframe key=${previewKey} ref=${frame} src=${project.previewUrl} title=${t("App preview")}></iframe>
 						${picking &&
 						html`<div class="pick-hint" role="status">
 							${selectable
-								? html`${icon("select")}<span>${phone ? "Tap" : "Click"} what to change${phone ? "" : ", or drag over an area"}</span>`
-								: html`<span class="spinner"></span><span>Waiting for the preview</span>`}
-							<button class="pick-hint-close" title="Stop selecting" onClick=${() => setPicking(false)}>${icon("x")}</button>
+								? html`${icon("select")}<span>${phone ? t("Tap what to change") : t("Click what to change, or drag over an area")}</span>`
+								: html`<span class="spinner"></span><span>${t("Waiting for the preview")}</span>`}
+							<button class="pick-hint-close" title=${t("Stop selecting")} onClick=${() => setPicking(false)}>${icon("x")}</button>
 						</div>`}
 						${pick &&
 						html`<${PickPrompt}
@@ -1219,14 +1222,14 @@ function Builder({ id }) {
 			</section>
 			<${Sheet} open=${panel === "more"} title=${project.name} onClose=${() => setPanel(null)}>
 				<div class="sheet-body flush menu">
-					<button class="menu-row" onClick=${() => openFromMenu("versions")}>${icon("history")} Versions</button>
-					<button class="menu-row" onClick=${() => openFromMenu("share")}>${icon("share")} Share</button>
-					<button class="menu-row" onClick=${() => openFromMenu("github")}>${icon("github")} GitHub</button>
-					<button class="menu-row" onClick=${() => openFromMenu("logs")}>${icon("terminal")} Dev server log</button>
-					<a class="menu-row" href=${project.previewUrl} target="_blank" rel="noopener">${icon("external")} Open preview in a new tab</a>
+					<button class="menu-row" onClick=${() => openFromMenu("versions")}>${icon("history")} ${t("Versions")}</button>
+					<button class="menu-row" onClick=${() => openFromMenu("share")}>${icon("share")} ${t("Share")}</button>
+					<button class="menu-row" onClick=${() => openFromMenu("github")}>${icon("github")} ${t("GitHub")}</button>
+					<button class="menu-row" onClick=${() => openFromMenu("logs")}>${icon("terminal")} ${t("Dev server log")}</button>
+					<a class="menu-row" href=${project.previewUrl} target="_blank" rel="noopener">${icon("external")} ${t("Open preview in a new tab")}</a>
 				</div>
 			<//>
-			<${Sheet} open=${panel === "versions"} title="Versions" onClose=${() => setPanel(null)}>
+			<${Sheet} open=${panel === "versions"} title=${t("Versions")} onClose=${() => setPanel(null)}>
 				<${VersionsPanel}
 					id=${id}
 					running=${running}
@@ -1237,16 +1240,16 @@ function Builder({ id }) {
 					}}
 				/>
 			<//>
-			<${Sheet} open=${panel === "logs"} title="Dev server log" onClose=${() => setPanel(null)}>
+			<${Sheet} open=${panel === "logs"} title=${t("Dev server log")} onClose=${() => setPanel(null)}>
 				<${LogsPanel} id=${id} />
 			<//>
-			<${Sheet} open=${panel === "github"} title="GitHub" onClose=${() => setPanel(null)}>
+			<${Sheet} open=${panel === "github"} title=${t("GitHub")} onClose=${() => setPanel(null)}>
 				<${GitHubPanel} project=${project} running=${running} open=${panel === "github"} />
 			<//>
-			<${Sheet} open=${panel === "share"} title="Share" onClose=${() => setPanel(null)}>
+			<${Sheet} open=${panel === "share"} title=${t("Share")} onClose=${() => setPanel(null)}>
 				<${SharePanel} project=${project} onChange=${loadProject} />
 			<//>
-			<${Sheet} open=${panel === "publish"} title="Publish" onClose=${() => setPanel(null)}>
+			<${Sheet} open=${panel === "publish"} title=${t("Publish")} onClose=${() => setPanel(null)}>
 				<${PublishPanel} project=${project} running=${running} onChange=${loadProject} />
 			<//>
 		</div>
@@ -1831,7 +1834,7 @@ function VersionsPanel({ id, running, canEdit, onRestored }) {
 	const restore = async (commit) => {
 		try {
 			await api(`/projects/${id}/restore`, { method: "POST", body: { commit } });
-			toast(`Restored ${commit}`);
+			toast(t("Restored {commit}", { commit }));
 			load();
 			onRestored();
 		} catch (err) {
@@ -1844,10 +1847,10 @@ function VersionsPanel({ id, running, canEdit, onRestored }) {
 		${(versions ?? []).map(
 			(v, i) => html`<div class="list-row">
 				<div class="grow">
-					<div class="title">${v.subject} ${i === 0 && html`<span class="badge accent">Current</span>`}</div>
+					<div class="title">${v.subject} ${i === 0 && html`<span class="badge accent">${t("Current")}</span>`}</div>
 					<div class="sub"><span class="mono">${v.commit}</span> · ${timeAgo(v.date)}</div>
 				</div>
-				${i > 0 && canEdit && html`<button class="btn sm" disabled=${running} onClick=${() => restore(v.commit)}>Restore</button>`}
+				${i > 0 && canEdit && html`<button class="btn sm" disabled=${running} onClick=${() => restore(v.commit)}>${t("Restore")}</button>`}
 			</div>`,
 		)}
 	</div>`;
@@ -1865,7 +1868,7 @@ function LogsPanel({ id }) {
 	useEffect(() => {
 		box.current?.scrollTo(0, box.current.scrollHeight);
 	}, [logs]);
-	return html`<div class="sheet-body flush" ref=${box}><pre class="log">${logs || "Loading..."}</pre></div>`;
+	return html`<div class="sheet-body flush" ref=${box}><pre class="log">${logs || t("Loading...")}</pre></div>`;
 }
 
 function GitHubPanel({ project, running, open }) {
@@ -1977,9 +1980,9 @@ function GitHubPanel({ project, running, open }) {
 }
 
 const TEAM_ACCESS = {
-	none: "Only the people below",
-	viewer: "Everyone on the team can view",
-	editor: "Everyone on the team can edit",
+	none: t("Only the people below"),
+	viewer: t("Everyone on the team can view"),
+	editor: t("Everyone on the team can edit"),
 };
 
 function SharePanel({ project, onChange }) {
@@ -2011,39 +2014,39 @@ function SharePanel({ project, onChange }) {
 		</div>`;
 	return html`<div class="sheet-body">
 		<p class="faint" style="font-size:13px;margin:0 0 8px">
-			Viewers open the preview and the published app. Editors also chat with the agent, edit code and data, and publish. The owner and admins can always do everything.
+			${t("Viewers open the preview and the published app. Editors also chat with the agent, edit code and data, and publish. The owner and admins can always do everything.")}
 		</p>
 		<label class="field">
-			<span>General access</span>
+			<span>${t("General access")}</span>
 			<select class="select" value=${data.teamAccess} disabled=${!data.canManage} onChange=${(e) => update({ teamAccess: e.target.value })}>
 				${Object.entries(TEAM_ACCESS).map(([key, label]) => html`<option value=${key}>${label}</option>`)}
 			</select>
 		</label>
-		<h4 class="section-title" style="margin:8px 0 0">People</h4>
+		<h4 class="section-title" style="margin:8px 0 0">${t("People")}</h4>
 		<div>
-			<div class="list-row person">${who(data.owner)}<span class="badge accent">Owner</span></div>
+			<div class="list-row person">${who(data.owner)}<span class="badge accent">${t("Owner")}</span></div>
 			${data.members.map(
 				(m) => html`<div class="list-row person">
 					${who(m)}
 					${data.canManage
 						? html`<select class="select sm" value=${m.role} onChange=${(e) => update({ member: { userId: m.userId, role: e.target.value } })}>
-									<option value="viewer">Can view</option>
-									<option value="editor">Can edit</option>
+									<option value="viewer">${t("Can view")}</option>
+									<option value="editor">${t("Can edit")}</option>
 								</select>
-								<button class="icon-btn" title="Remove" onClick=${() => update({ member: { userId: m.userId, role: null } })}>${icon("x")}</button>`
-						: html`<span class="badge">${m.role === "editor" ? "Can edit" : "Can view"}</span>`}
+								<button class="icon-btn" title=${t("Remove")} onClick=${() => update({ member: { userId: m.userId, role: null } })}>${icon("x")}</button>`
+						: html`<span class="badge">${m.role === "editor" ? t("Can edit") : t("Can view")}</span>`}
 				</div>`,
 			)}
 		</div>
 		${data.canManage &&
 		html`<div class="row share-add">
 			<select class="select grow" value=${pick} onChange=${(e) => setPick(e.target.value)}>
-				<option value="">${candidates.length ? "Add a person..." : "Everyone is already added"}</option>
+				<option value="">${candidates.length ? t("Add a person...") : t("Everyone is already added")}</option>
 				${candidates.map((p) => html`<option value=${p.id}>${p.name ? `${p.name} (${p.email})` : p.email}</option>`)}
 			</select>
 			<select class="select sm" value=${pickRole} onChange=${(e) => setPickRole(e.target.value)}>
-				<option value="viewer">Can view</option>
-				<option value="editor">Can edit</option>
+				<option value="viewer">${t("Can view")}</option>
+				<option value="editor">${t("Can edit")}</option>
 			</select>
 			<button
 				class="btn primary sm"
@@ -2053,10 +2056,10 @@ function SharePanel({ project, onChange }) {
 					setPick("");
 				}}
 			>
-				Add
+				${t("Add")}
 			</button>
 		</div>`}
-		${!data.canManage && html`<div class="callout">Only the owner or an admin can change who has access.</div>`}
+		${!data.canManage && html`<div class="callout">${t("Only the owner or an admin can change who has access.")}</div>`}
 		${error && html`<p class="error">${error}</p>`}
 	</div>`;
 }
@@ -2079,8 +2082,8 @@ function PublishPanel({ project, running, onChange }) {
 			await postStream(`/projects/${project.id}/publish`, (event, data) => {
 				if (event === "log") setLog((lines) => [...lines, data]);
 				if (event === "done") {
-					setLog((lines) => [...lines, `Published v${data.version}`]);
-					toast(`Published v${data.version}`);
+					setLog((lines) => [...lines, t("Published v{version}", { version: data.version })]);
+					toast(t("Published v{version}", { version: data.version }));
 				}
 				if (event === "failed") setError(data);
 			});
@@ -2096,7 +2099,7 @@ function PublishPanel({ project, running, onChange }) {
 		setError("");
 		try {
 			await api(`/projects/${project.id}/wake-app`, { method: "POST" });
-			toast("The app is running again");
+			toast(t("The app is running again"));
 		} catch (err) {
 			setError(err.message);
 		}
@@ -2114,32 +2117,32 @@ function PublishPanel({ project, running, onChange }) {
 	};
 	return html`<div class="sheet-body">
 		<div class="callout">
-			Publishes to <a href=${project.appUrl} target="_blank" rel="noopener">${project.appUrl}</a>. Only people the app is shared with can open it.
+			${t("Publishes to")} <a href=${project.appUrl} target="_blank" rel="noopener" dir="ltr">${project.appUrl}</a>. ${t("Only people the app is shared with can open it.")}
 		</div>
 		${project.appAsleepSince &&
 		html`<div class="callout row">
-			<span class="grow">${icon("moon")} Offline since ${new Date(project.appAsleepSince).toLocaleDateString()}: nobody opened it for a while. The next visit starts it again.</span>
-			<button class="btn sm" disabled=${waking} onClick=${wakeNow}>${waking ? html`<span class="spinner"></span>` : icon("play")} Start now</button>
+			<span class="grow">${icon("moon")} ${t("Offline since {date}: nobody opened it for a while. The next visit starts it again.", { date: new Date(project.appAsleepSince).toLocaleDateString(lang) })}</span>
+			<button class="btn sm" disabled=${waking} onClick=${wakeNow}>${waking ? html`<span class="spinner"></span>` : icon("play")} ${t("Start now")}</button>
 		</div>`}
 		<div class="row">
 			<button class="btn primary grow" disabled=${busy || running} onClick=${run}>
-				${busy ? html`<span class="spinner"></span> Publishing` : html`${icon("globe")} Publish current version`}
+				${busy ? html`<span class="spinner"></span> ${t("Publishing")}` : html`${icon("globe")} ${t("Publish current version")}`}
 			</button>
-			${project.published && html`<button class="btn danger" onClick=${() => act("unpublish")}>Unpublish</button>`}
+			${project.published && html`<button class="btn danger" onClick=${() => act("unpublish")}>${t("Unpublish")}</button>`}
 		</div>
-		${running && html`<p class="faint" style="font-size:12.5px">Publishing is available when the agent finishes.</p>`}
+		${running && html`<p class="faint" style="font-size:12.5px">${t("Publishing is available when the agent finishes.")}</p>`}
 		${log.length > 0 && html`<pre class="log boxed">${log.join("\n")}</pre>`}
 		${error && html`<pre class="log boxed error">${error}</pre>`}
 		${deployments.length > 0 &&
-		html`<h4 class="section-title" style="margin:24px 0 4px">History</h4>
+		html`<h4 class="section-title" style="margin:24px 0 4px">${t("History")}</h4>
 			<div>
 				${deployments.map(
 					(d) => html`<div class="list-row" style="padding:10px 0">
 						<div class="grow">
-							<div class="title">v${d.version} ${d.active && html`<span class="badge live"><span class="dot"></span>Live</span>`}</div>
+							<div class="title">v${d.version} ${d.active && html`<span class="badge live"><span class="dot"></span>${t("Live")}</span>`}</div>
 							<div class="sub"><span class="mono">${d.git_commit}</span> · ${timeAgo(d.created_at)}</div>
 						</div>
-						${!d.active && html`<button class="btn sm" onClick=${() => act("rollback", { version: d.version })}>Roll back</button>`}
+						${!d.active && html`<button class="btn sm" onClick=${() => act("rollback", { version: d.version })}>${t("Roll back")}</button>`}
 					</div>`,
 				)}
 			</div>`}
@@ -2753,7 +2756,7 @@ function Skills({ scope, user }) {
 			orgNames.length > 0 &&
 			html`<a class="callout skill-org-note" href="#/settings/org-skills">
 				${icon("users")} <span class="grow">Your builds also use ${orgNames.length} organization ${orgNames.length === 1 ? "skill" : "skills"}.</span>
-				${icon("chevron")}
+				${icon("chevron", "along-line")}
 			</a>`}
 			<div class="card">
 				${skills === null
@@ -2902,19 +2905,19 @@ function UsagePage() {
 	const out = !usage.unlimited && usage.spentUsd >= usage.budgetUsd;
 	return html`<div class="page">
 		<header class="page-head">
-			<h1>Usage</h1>
-			<p>What the AI agent has cost while building your apps this month. Your admin sets the budget.</p>
+			<h1>${t("Usage")}</h1>
+			<p>${t("What the AI agent has cost while building your apps this month. Your admin sets the budget.")}</p>
 		</header>
 		<div class="stack">
 			<div class="card usage-hero">
 				<div class="card-body">
 					<div class="usage-figures">
 						<div>
-							<div class="label">Spent this month</div>
+							<div class="label">${t("Spent this month")}</div>
 							<div class="amount">${money(usage.spentUsd)}</div>
 						</div>
 						<div class="right">
-							<div class="label">${usage.unlimited ? "Budget" : "Remaining"}</div>
+							<div class="label">${usage.unlimited ? t("Budget") : t("Remaining")}</div>
 							<div class="amount soft">
 								${usage.unlimited ? html`${icon("infinity")} Unlimited` : money(usage.remainingUsd)}
 							</div>
@@ -2922,30 +2925,30 @@ function UsagePage() {
 					</div>
 					<${Meter} spent=${usage.spentUsd} budget=${usage.budgetUsd} unlimited=${usage.unlimited} />
 					<div class="usage-foot">
-						<span>${usage.unlimited ? "No monthly limit" : `Monthly budget ${money(usage.budgetUsd)}`}</span>
+						<span>${usage.unlimited ? t("No monthly limit") : t("Monthly budget {amount}", { amount: money(usage.budgetUsd) })}</span>
 						<span>Resets ${shortDate(usage.resetsAt)}</span>
 					</div>
 					${out &&
-					html`<p class="notice danger">${icon("alert")} You have used this month's budget. Ask an admin to raise it to keep building.</p>`}
+					html`<p class="notice danger">${icon("alert")} ${t("You have used this month's budget. Ask an admin to raise it to keep building.")}</p>`}
 				</div>
 			</div>
 			<div class="card">
-				<div class="card-head"><h2>By day</h2></div>
+				<div class="card-head"><h2>${t("By day")}</h2></div>
 				<div class="card-body">
-					<div class="spark" aria-label="Spend per day">
+					<div class="spark" aria-label=${t("Spend per day")}>
 						${days.map(
 							(day) => html`<div class="spark-col" title=${`${shortDate(day)}: ${money(byDay[day] ?? 0)}`}>
 								<span style=${`transform:scaleY(${(byDay[day] ?? 0) / peak})`}></span>
 							</div>`,
 						)}
 					</div>
-					<div class="usage-foot"><span>${shortDate(usage.periodStart)}</span><span>Today</span></div>
+					<div class="usage-foot"><span>${shortDate(usage.periodStart)}</span><span>${t("Today")}</span></div>
 				</div>
 			</div>
 			<div class="card">
-				<div class="card-head"><h2>By app</h2></div>
+				<div class="card-head"><h2>${t("By app")}</h2></div>
 				${usage.byProject.length === 0
-					? html`<div class="card-body faint">Nothing yet this month.</div>`
+					? html`<div class="card-body faint">${t("Nothing yet this month.")}</div>`
 					: usage.byProject.map(
 							(p) => html`<div class="list-row">
 								<div class="grow">
@@ -3617,24 +3620,43 @@ function EmailSettings() {
 }
 
 // Settings sections, grouped the usual way: what is yours, then what the whole organization shares.
+/** Each person's interface language, remembered in this browser (i18n.js). */
+function LanguageSettings() {
+	return html`<div class="page">
+		<header class="page-head">
+			<h1>${t("Language")}</h1>
+			<p>${t("The language of Agency's screens on this browser. The agent answers in the language you write to it.")}</p>
+		</header>
+		<div class="card stack-sm" style="padding:16px">
+			${Object.entries(LANGUAGES).map(
+				([code, language]) => html`<label class="check">
+					<input type="radio" name="language" checked=${code === lang} onChange=${() => setLanguage(code)} />
+					<span lang=${code}>${language.name}</span>
+				</label>`,
+			)}
+		</div>
+	</div>`;
+}
+
 const SETTINGS_GROUPS = [
 	{
-		label: "Account",
+		label: t("Account"),
 		items: [
-			{ key: "skills", label: "My skills", icon: "wand" },
-			{ key: "usage", label: "Usage", icon: "gauge" },
+			{ key: "skills", label: t("My skills"), icon: "wand" },
+			{ key: "usage", label: t("Usage"), icon: "gauge" },
+			{ key: "language", label: t("Language"), icon: "globe" },
 		],
 	},
 	{
-		label: "Organization",
+		label: t("Organization"),
 		items: [
-			{ key: "connections", label: "Connections", icon: "database" },
-			{ key: "org-skills", label: "Skills", icon: "sparkles" },
-			{ key: "team", label: "Team", icon: "users", admin: true },
-			{ key: "models", label: "Models", icon: "cpu", admin: true },
-			{ key: "sso", label: "Single sign-on", icon: "lock", admin: true },
+			{ key: "connections", label: t("Connections"), icon: "database" },
+			{ key: "org-skills", label: t("Skills"), icon: "sparkles" },
+			{ key: "team", label: t("Team"), icon: "users", admin: true },
+			{ key: "models", label: t("Models"), icon: "cpu", admin: true },
+			{ key: "sso", label: t("Single sign-on"), icon: "lock", admin: true },
 			{ key: "github", label: "GitHub", icon: "github", admin: true },
-			{ key: "email", label: "Email", icon: "mail", admin: true },
+			{ key: "email", label: t("Email"), icon: "mail", admin: true },
 		],
 	},
 ];
@@ -3649,6 +3671,7 @@ function Settings({ user, section, onUsageChange }) {
 		skills: () => html`<${Skills} key="me" scope="me" user=${user} />`,
 		"org-skills": () => html`<${Skills} key="org" scope="org" user=${user} />`,
 		usage: () => html`<${UsagePage} />`,
+		language: () => html`<${LanguageSettings} />`,
 		connections: () => html`<${Connections} user=${user} />`,
 		team: () => html`<${Team} user=${user} onChange=${onUsageChange} />`,
 		models: () => html`<${ModelSettings} />`,
@@ -3656,13 +3679,13 @@ function Settings({ user, section, onUsageChange }) {
 		github: () => html`<${OrgSettings} key="github" part="github" />`,
 		email: () => html`<${EmailSettings} />`,
 	}[current];
-	const nav = html`<nav class="settings-nav" aria-label="Settings">
+	const nav = html`<nav class="settings-nav" aria-label=${t("Settings")}>
 		${groups.map(
 			(group) => html`<div class="settings-group">
 				<div class="settings-group-label">${group.label}</div>
 				${group.items.map(
 					(item) => html`<a href=${`#/settings/${item.key}`} class="settings-link" aria-current=${current === item.key ? "page" : undefined}>
-						${icon(item.icon)} <span class="grow">${item.label}</span> ${icon("chevron", "go")}
+						${icon(item.icon)} <span class="grow">${item.label}</span> ${icon("chevron", "go along-line")}
 					</a>`,
 				)}
 			</div>`,
@@ -3670,12 +3693,12 @@ function Settings({ user, section, onUsageChange }) {
 	</nav>`;
 	if (phone && !current) {
 		return html`<div class="page settings-index">
-			<header class="page-head"><h1>Settings</h1></header>
+			<header class="page-head"><h1>${t("Settings")}</h1></header>
 			${nav}
 		</div>`;
 	}
 	return html`<div class="settings">
-		${phone ? html`<a class="settings-back" href="#/settings">${icon("arrowLeft")} Settings</a>` : nav}
+		${phone ? html`<a class="settings-back" href="#/settings">${icon("arrowLeft", "along-line")} ${t("Settings")}</a>` : nav}
 		<div class="settings-body">${content?.()}</div>
 	</div>`;
 }
@@ -3736,26 +3759,26 @@ function App() {
 				<a class="brand" href="#/"><img src="/static/logo.png" alt="" /> <b>Agency</b></a>
 				<span class="grow"></span>
 				${usage &&
-				html`<a class="usage-pill" href="#/settings/usage" title="Your AI usage this month">
+				html`<a class="usage-pill" href="#/settings/usage" title=${t("Your AI usage this month")}>
 					${!usage.unlimited && html`<${Meter} spent=${usage.spentUsd} budget=${usage.budgetUsd} />`}
 					<span class="mono">${money(usage.spentUsd)}</span>
 				</a>`}
 				<span class="avatar" title=${user.email}>${(user.name || user.email).slice(0, 1)}</span>
-				<button class="icon-btn" title="Sign out" onClick=${signOut}>${icon("logout")}</button>
+				<button class="icon-btn" title=${t("Sign out")} onClick=${signOut}>${icon("logout")}</button>
 			</header>
 			<nav class="nav">
 				<a class="brand" href="#/"><img src="/static/logo.png" alt="" /> <b>Agency</b></a>
-				${link("#/", "Apps", "apps")} ${link("#/settings", "Settings", "settings")}
+				${link("#/", t("Apps"), "apps")} ${link("#/settings", t("Settings"), "settings")}
 				<span class="spacer"></span>
 				${usage &&
-				html`<a class="usage-chip" href="#/settings/usage" title="Your AI usage this month">
-					<div class="row"><span class="grow">AI usage</span><span class="mono">${spendLabel(usage)}</span></div>
+				html`<a class="usage-chip" href="#/settings/usage" title=${t("Your AI usage this month")}>
+					<div class="row"><span class="grow">${t("AI usage")}</span><span class="mono">${spendLabel(usage)}</span></div>
 					<${Meter} spent=${usage.spentUsd} budget=${usage.budgetUsd} unlimited=${usage.unlimited} />
 				</a>`}
 				<div class="account">
 					<span class="avatar">${(user.name || user.email).slice(0, 1)}</span>
 					<span class="who" title=${user.email}>${user.email}</span>
-					<button class="icon-btn" title="Sign out" onClick=${signOut}>${icon("logout")}</button>
+					<button class="icon-btn" title=${t("Sign out")} onClick=${signOut}>${icon("logout")}</button>
 				</div>
 			</nav>
 			<main class="main">${view}</main>
