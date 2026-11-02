@@ -22,6 +22,17 @@ Every app has an owner (whoever created it); admins can do everything with every
 
 New apps start as view-only for the team; apps created before sharing existed stay editable by everyone. Traefik's sign-in check enforces the same rules on `<app>.<domain>` and `<app>-preview.<domain>`, and passes the role to apps as `X-Agency-App-Role` (`currentUser().appRole`).
 
+## Ideas
+
+**Ideas** in the sidebar is where the organization collects what it would like built. Anyone writes an idea in their own words; the agent (the same small, fast model that names apps) organizes it into a title, the problem, who has it and what it would save, and points out similar open ideas and existing apps that may already cover it. The cost of organizing an idea is charged to its author like any other AI use. People vote for ideas and press **I'd build this** to offer to build one.
+
+Admins run the pipeline rather than build in it: they set an idea's status (open, planned, being built, done, not now) with a note everyone sees, merge duplicates (votes, offers and text move to the idea that stays), and press **Start an app** for the builder they pick, often someone who offered. That builder gets a new app whose agent starts by writing `SPEC.md` from the idea and asking about what it doesn't say, and an email. Authors can withdraw their own ideas.
+
+Published apps also show a small **Suggest an improvement** button in the corner (in Hebrew when the browser is). It opens Ideas with the app filled in, the suggestion is organized the same way, and the app's owner gets an email; the owner or an admin presses **Plan it in the app's chat** to hand it to the agent in Plan mode, so nothing changes before they approve a plan. The button comes with new apps; an existing app gets it when `instrumentation-client.ts` in its code is replaced with the template's.
+
+<img src="assets/screenshots/ideas.png" alt="Ideas: organized ideas with votes, offers to build, an admin's note and an improvement to an existing app" width="100%">
+<img src="assets/screenshots/suggest.png" alt="A published app with the Suggest an improvement button in the corner, in Hebrew" width="100%">
+
 ## Roles
 
 Everyone is an **admin** or a **member**. Admins manage the team, connections and organization settings, and can open and change every app; members build their own apps and the ones shared with them. An admin changes someone's role from the menu next to their name under **Settings > Team**, and the change applies on that person's next click. You can't change your own role (another admin has to), and the organization always keeps at least one admin. With single sign-on, password sign-in may be open to admins only, so a member who used a password needs to sign in through SSO.

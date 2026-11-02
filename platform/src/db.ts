@@ -157,6 +157,39 @@ create unique index if not exists user_skills_org_name on user_skills (name) whe
 -- visit (only while the platform runs), and when it was taken down. Its next visit starts it again.
 alter table projects add column if not exists app_idle_minutes integer not null default 0;
 alter table projects add column if not exists app_asleep_since timestamptz;
+
+-- Ideas (ideas.ts): what people would like built, organized by the agent, with votes and offers to
+-- build. app_id is the app an improvement is for; project_id the app started from the idea.
+create table if not exists ideas (
+	id serial primary key,
+	author_id uuid references users(id) on delete set null,
+	text text not null,
+	title text not null default '',
+	problem text not null default '',
+	who text not null default '',
+	value text not null default '',
+	similar integer[] not null default '{}',
+	similar_apps text[] not null default '{}',
+	app_id uuid references projects(id) on delete set null,
+	project_id uuid references projects(id) on delete set null,
+	status text not null default 'open' check (status in ('open', 'planned', 'building', 'done', 'declined', 'merged')),
+	merged_into integer references ideas(id) on delete set null,
+	admin_note text not null default '',
+	created_at timestamptz not null default now(),
+	updated_at timestamptz not null default now()
+);
+create table if not exists idea_votes (
+	idea_id integer not null references ideas(id) on delete cascade,
+	user_id uuid not null references users(id) on delete cascade,
+	created_at timestamptz not null default now(),
+	primary key (idea_id, user_id)
+);
+create table if not exists idea_builders (
+	idea_id integer not null references ideas(id) on delete cascade,
+	user_id uuid not null references users(id) on delete cascade,
+	created_at timestamptz not null default now(),
+	primary key (idea_id, user_id)
+);
 `;
 
 export async function migrate(): Promise<void> {

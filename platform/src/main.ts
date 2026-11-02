@@ -97,6 +97,7 @@ import {
 	SkillError,
 	updateSkill,
 } from "./skills.ts";
+import { createIdea, IdeaError, listIdeas, mergeIdea, planImprovement, startApp, toggleBuilder, toggleVote, updateIdea } from "./ideas.ts";
 import { saveSso, signInOptions, SsoError, ssoFinish, ssoStartUrl, ssoView } from "./sso.ts";
 import { assertBudget, BudgetError, listUsersWithUsage, parseBudget, recordUsage, setBudget, usageDetail, usageFor } from "./usage.ts";
 
@@ -140,7 +141,7 @@ app.onError((error, c) => {
 	if (error instanceof DataError) return c.json({ error: error.message }, 400);
 	if (error instanceof AccessError) return c.json({ error: error.message }, 403);
 	if (error instanceof FileError) return c.json({ error: error.message }, 400);
-	if (error instanceof GitHubError || error instanceof MailError || error instanceof SsoError || error instanceof SkillError || error instanceof ModelError) return c.json({ error: error.message }, 400);
+	if (error instanceof GitHubError || error instanceof MailError || error instanceof SsoError || error instanceof SkillError || error instanceof ModelError || error instanceof IdeaError) return c.json({ error: error.message }, 400);
 	if (error instanceof NotFoundError) return c.json({ error: error.message }, 404);
 	console.error(error);
 	return c.json({ error: errorMessage(error) }, 500);
@@ -379,6 +380,52 @@ api.put("/projects/:id/sharing", async (c) => {
 	if (body.member) await setMember(project, String(body.member.userId ?? ""), body.member.role ?? null);
 	const updated = (await getProject(project.id))!;
 	return c.json({ ...(await getSharing(updated)), canManage: true });
+});
+
+// ---------------------------------------------------------------------------
+// Ideas: what people would like built, from idea to app (ideas.ts)
+
+api.get("/ideas", async (c) => c.json(await listIdeas(c.get("user"))));
+
+/** JSON `{ text, app? }`: a new idea, or with `app` (slug or id) an improvement to that app. */
+api.post("/ideas", async (c) => {
+	const user = c.get("user");
+	await createIdea(user, await c.req.json());
+	return c.json(await listIdeas(user), 201);
+});
+
+api.post("/ideas/:id/vote", async (c) => {
+	await toggleVote(Number(c.req.param("id")), c.get("user"));
+	return c.json(await listIdeas(c.get("user")));
+});
+
+api.post("/ideas/:id/build", async (c) => {
+	await toggleBuilder(Number(c.req.param("id")), c.get("user"));
+	return c.json(await listIdeas(c.get("user")));
+});
+
+/** JSON `{ status?, note? }`: admins move an idea along; its author can withdraw it. */
+api.patch("/ideas/:id", async (c) => {
+	await updateIdea(Number(c.req.param("id")), c.get("user"), await c.req.json());
+	return c.json(await listIdeas(c.get("user")));
+});
+
+api.post("/ideas/:id/merge", requireAdmin, async (c) => {
+	const body = await c.req.json<{ into?: number }>();
+	await mergeIdea(Number(c.req.param("id")), Number(body.into));
+	return c.json(await listIdeas(c.get("user")));
+});
+
+/** JSON `{ builderId? }`: admins start an app from an idea for the builder they pick. */
+api.post("/ideas/:id/start", requireAdmin, async (c) => {
+	const project = await startApp(Number(c.req.param("id")), c.get("user"), await c.req.json());
+	linkNewApp(project.id);
+	return c.json({ projectId: project.id });
+});
+
+api.post("/ideas/:id/plan", async (c) => {
+	const project = await planImprovement(Number(c.req.param("id")), c.get("user"));
+	return c.json({ projectId: project.id });
 });
 
 /** Everyone on the team, for picking people to share an app with. */

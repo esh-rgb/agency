@@ -3982,3 +3982,90 @@ p.small {
 		margin-left: 30px;
 	}
 }
+
+/* ------------------------------------------------------------------------- */
+/* Ideas */
+
+.idea-composer {
+	max-width: none;
+}
+
+.card.idea {
+	padding: 14px 16px;
+}
+
+.card.idea.closed {
+	opacity: 0.75;
+}
+
+.idea-main {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+}
+
+.stack-xs {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+
+.vote {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex: none;
+	gap: 2px;
+	width: 46px;
+	padding: 6px 0;
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--text-2);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.vote.on {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+.idea-title {
+	font-size: 15px;
+}
+
+.idea-facts,
+.idea-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+	font-size: 13px;
+}
+
+.idea-facts .icon,
+.idea-meta .icon {
+	width: 14px;
+	height: 14px;
+	vertical-align: -2px;
+}
+
+.idea-similar {
+	font-size: 13px;
+}
+
+.idea-text {
+	white-space: pre-wrap;
+	font-size: 13.5px;
+	color: var(--text-2);
+	padding: 10px 12px;
+	border-radius: var(--radius);
+	background: var(--surface-2);
+}
+
+.idea-more {
+	margin-top: 4px;
+}

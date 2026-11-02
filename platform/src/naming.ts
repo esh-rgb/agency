@@ -40,7 +40,7 @@ export async function nameApp(prompt: string, given = ""): Promise<AppName> {
 	if (given && slugify(given)) return { name: given, slug: slugify(given) };
 	let usage: AppName["usage"];
 	try {
-		const answer = await ask(given ? `Name: ${given}\n\nRequest:\n${prompt}` : prompt);
+		const answer = await askClaude(INSTRUCTIONS, given ? `Name: ${given}\n\nRequest:\n${prompt}` : prompt);
 		if (answer) {
 			usage = { model: answer.model, usage: answer.usage };
 			const parsed = JSON.parse(/\{[\s\S]*\}/.exec(answer.text)?.[0] ?? "{}") as { name?: unknown; slug?: unknown };
@@ -55,21 +55,29 @@ export async function nameApp(prompt: string, given = ""): Promise<AppName> {
 	return { name: fallbackName, slug: slugify(fallbackName) || "new-app", usage };
 }
 
-interface Answer {
+export interface Answer {
 	text: string;
 	model: string;
 	usage: { input: number; output: number };
 }
 
-/** Sends one message to the utility model; undefined when this deploy has no way to reach Claude. */
-async function ask(request: string): Promise<Answer | undefined> {
+/**
+ * Sends one message to the small, fast utility model, for the platform's own short jobs (naming apps,
+ * organizing ideas); undefined when this deploy has no way to reach Claude.
+ */
+export async function askClaude(
+	system: string,
+	request: string,
+	options: { maxTokens?: number; maxInput?: number; timeoutMs?: number } = {},
+): Promise<Answer | undefined> {
 	const model = utilityModel();
-	const body = { max_tokens: 200, system: INSTRUCTIONS, messages: [{ role: "user", content: request.slice(0, 4000) }] };
+	const timeout = options.timeoutMs ?? TIMEOUT_MS;
+	const body = { max_tokens: options.maxTokens ?? 200, system, messages: [{ role: "user", content: request.slice(0, options.maxInput ?? 4000) }] };
 	let response: { content?: Array<{ type: string; text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
 	if (bedrock) {
 		const result = await bedrock.send(
 			new InvokeModelCommand({ modelId: model, contentType: "application/json", body: JSON.stringify({ anthropic_version: "bedrock-2023-05-31", ...body }) }),
-			{ abortSignal: AbortSignal.timeout(TIMEOUT_MS) },
+			{ abortSignal: AbortSignal.timeout(timeout) },
 		);
 		response = JSON.parse(new TextDecoder().decode(result.body));
 	} else {
@@ -80,7 +88,7 @@ async function ask(request: string): Promise<Answer | undefined> {
 			method: "POST",
 			headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" },
 			body: JSON.stringify({ model, ...body }),
-			signal: AbortSignal.timeout(TIMEOUT_MS),
+			signal: AbortSignal.timeout(timeout),
 		});
 		if (!result.ok) throw new Error(`Claude API answered ${result.status}: ${(await result.text()).slice(0, 200)}`);
 		response = await result.json();

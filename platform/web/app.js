@@ -3617,6 +3617,196 @@ function EmailSettings() {
 }
 
 // Settings sections, grouped the usual way: what is yours, then what the whole organization shares.
+const IDEA_STATUS = {
+	open: { label: "Open", badge: "" },
+	planned: { label: "Planned", badge: "accent" },
+	building: { label: "Being built", badge: "accent" },
+	done: { label: "Done", badge: "live" },
+	declined: { label: "Not now", badge: "" },
+	merged: { label: "Merged", badge: "" },
+};
+
+/** One idea: what the agent made of it, votes and offers to build, and what admins can do with it. */
+function IdeaCard({ idea, user, ideas, people, onData }) {
+	const [open, setOpen] = useState(false);
+	const [note, setNote] = useState(idea.adminNote);
+	const [mergeInto, setMergeInto] = useState("");
+	const [builder, setBuilder] = useState(idea.builders[0]?.id ?? user.id);
+	const [busy, setBusy] = useState(false);
+	const admin = user.role === "admin";
+	const call = async (path, options) => {
+		setBusy(true);
+		try {
+			const result = await api(`/ideas/${idea.id}${path}`, options);
+			if (result.projectId) location.hash = `#/p/${result.projectId}`;
+			else onData(result);
+		} catch (err) {
+			toast(err.message, "error");
+		}
+		setBusy(false);
+	};
+	const status = IDEA_STATUS[idea.status];
+	const active = ["open", "planned", "building"].includes(idea.status);
+	const others = ideas.filter((i) => i.id !== idea.id && i.status !== "merged");
+	const candidates = [...idea.builders, ...people.filter((p) => !idea.builders.some((b) => b.id === p.id)).map((p) => ({ id: p.id, name: p.name || p.email }))];
+	return html`<div class=${`card idea${active ? "" : " closed"}`}>
+		<div class="idea-main">
+			<button class=${`vote${idea.voted ? " on" : ""}`} title=${idea.voted ? "Take back your vote" : "I want this too"} disabled=${busy} onClick=${() => call("/vote", { method: "POST" })}>
+				${icon("arrowUp")}<b>${idea.votes}</b>
+			</button>
+			<div class="grow stack-xs">
+				<div class="row wrap">
+					<strong class="idea-title" dir="auto">${idea.title}</strong>
+					<span class=${`badge ${status.badge}`}>${status.label}</span>
+					${idea.app && html`<span class="badge">${icon("wand")} ${idea.app.name}</span>`}
+				</div>
+				${idea.problem && html`<div dir="auto">${idea.problem}</div>`}
+				${(idea.who || idea.value) &&
+				html`<div class="faint idea-facts" dir="auto">
+					${idea.who && html`<span>${icon("users")} ${idea.who}</span>`} ${idea.value && html`<span>${icon("gauge")} ${idea.value}</span>`}
+				</div>`}
+				${idea.mergedInto && html`<div class="faint">Merged into “${idea.mergedInto.title}”</div>`}
+				${idea.adminNote && html`<div class="callout" dir="auto">${icon("message")} ${idea.adminNote}</div>`}
+				${active &&
+				(idea.similar.length > 0 || idea.similarApps.length > 0) &&
+				html`<div class="faint idea-similar">
+					${idea.similar.length > 0 && html`<div>Similar ideas: ${idea.similar.map((s) => `“${s.title}”`).join(", ")}</div>`}
+					${idea.similarApps.length > 0 && html`<div>Maybe already covered by: ${idea.similarApps.join(", ")}</div>`}
+				</div>`}
+				<div class="row wrap faint idea-meta">
+					<span>${idea.author ?? "Someone"} · ${timeAgo(idea.createdAt)}</span>
+					${idea.builders.length > 0 && html`<span>${icon("pencil")} ${idea.builders.map((b) => b.name).join(", ")} would build it</span>`}
+					${idea.project && html`<a href=${`#/p/${idea.project.id}`}>${icon("external")} ${idea.project.name}</a>`}
+					<button class="link-btn" onClick=${() => setOpen(!open)}>${open ? "Hide" : "In their words"}${admin && active ? " · manage" : ""}</button>
+				</div>
+				${active &&
+				!idea.app &&
+				!idea.project &&
+				html`<div class="row">
+					<button class=${`btn sm${idea.building ? " primary" : ""}`} disabled=${busy} onClick=${() => call("/build", { method: "POST" })}>
+						${icon("pencil")} ${idea.building ? "You offered to build it" : "I'd build this"}
+					</button>
+				</div>`}
+				${active &&
+				idea.app?.canPlan &&
+				!idea.project &&
+				html`<div class="row">
+					<button class="btn sm primary" disabled=${busy} onClick=${() => call("/plan", { method: "POST" })}>${icon("message")} Plan it in the app's chat</button>
+				</div>`}
+				${open &&
+				html`<div class="stack-sm idea-more">
+					<div class="idea-text" dir="auto">${idea.text}</div>
+					${admin &&
+					active &&
+					html`<div class="stack-sm">
+						<div class="row wrap">
+							<select class="select sm" value=${idea.status} onChange=${(e) => call("", { method: "PATCH", body: { status: e.target.value } })}>
+								${["open", "planned", "building", "done", "declined"].map((key) => html`<option value=${key}>${IDEA_STATUS[key].label}</option>`)}
+							</select>
+							<input class="input grow" placeholder="A note everyone sees" value=${note} onInput=${(e) => setNote(e.target.value)} />
+							<button class="btn sm" disabled=${busy || note === idea.adminNote} onClick=${() => call("", { method: "PATCH", body: { note } })}>Save note</button>
+						</div>
+						${others.length > 0 &&
+						html`<div class="row wrap">
+							<select class="select sm grow" value=${mergeInto} onChange=${(e) => setMergeInto(e.target.value)}>
+								<option value="">Merge into another idea...</option>
+								${others.map((o) => html`<option value=${o.id}>${o.title}</option>`)}
+							</select>
+							<button class="btn sm" disabled=${busy || !mergeInto} onClick=${() => call("/merge", { method: "POST", body: { into: Number(mergeInto) } })}>Merge</button>
+						</div>`}
+						${!idea.app &&
+						!idea.project &&
+						html`<div class="row wrap">
+							<select class="select sm grow" value=${builder} onChange=${(e) => setBuilder(e.target.value)}>
+								${candidates.map((p) => html`<option value=${p.id}>${p.name}${idea.builders.some((b) => b.id === p.id) ? " (offered)" : ""}</option>`)}
+							</select>
+							<button class="btn sm primary" disabled=${busy} onClick=${() => call("/start", { method: "POST", body: { builderId: builder } })}>${icon("play")} Start an app</button>
+						</div>`}
+					</div>`}
+					${!admin &&
+					idea.mine &&
+					active &&
+					html`<div><button class="btn sm" disabled=${busy} onClick=${() => call("", { method: "PATCH", body: { status: "declined" } })}>Withdraw my idea</button></div>`}
+				</div>`}
+			</div>
+		</div>
+	</div>`;
+}
+
+/**
+ * Ideas: anyone writes what would make their work easier, in their own words, and the agent organizes it.
+ * `#/ideas/new?app=<slug>` comes from the "Suggest an improvement" button inside a published app.
+ */
+function Ideas({ user, route }) {
+	const params = new URLSearchParams(route.split("?")[1] ?? "");
+	const app = params.get("app");
+	const [ideas, setIdeas] = useState(null);
+	const [people, setPeople] = useState([]);
+	const [text, setText] = useState("");
+	const [busy, setBusy] = useState(false);
+	const [filter, setFilter] = useState("open");
+	const [error, setError] = useState("");
+	useEffect(() => {
+		api("/ideas").then(setIdeas, (err) => setError(err.message));
+		if (user.role === "admin") api("/people").then(setPeople, () => {});
+	}, []);
+	const submit = async () => {
+		if (!text.trim() || busy) return;
+		setBusy(true);
+		setError("");
+		try {
+			setIdeas(await api("/ideas", { method: "POST", body: { text, app: app ?? undefined } }));
+			setText("");
+			toast("Thanks! The agent organized your idea");
+			if (app) location.hash = "#/ideas";
+		} catch (err) {
+			setError(err.message);
+		}
+		setBusy(false);
+	};
+	const shown = (ideas ?? []).filter((i) =>
+		filter === "open" ? ["open", "planned", "building"].includes(i.status) : filter === "done" ? ["done", "declined", "merged"].includes(i.status) : true,
+	);
+	return html`<div class="page">
+		<header class="page-head">
+			<h1>Ideas</h1>
+			<p>What would make your work easier? Write it in your own words. The agent organizes it, points out similar ideas and apps, and the team votes. Admins merge ideas, connect people who want to build them, and start apps from them.</p>
+		</header>
+		<div class="composer idea-composer">
+			${app && html`<div class="row faint" style="padding:10px 14px 0">${icon("wand")} A suggested improvement to <b>${app}</b></div>`}
+			<textarea
+				dir="auto"
+				placeholder=${app ? "What should change in this app, and why?" : "For example: we track refund requests in emails and WhatsApp, and things fall through the cracks..."}
+				value=${text}
+				onInput=${(e) => setText(e.target.value)}
+				onKeyDown=${(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && submit()}
+				autofocus=${Boolean(app)}
+			></textarea>
+			<div class="bar">
+				<span class="grow"></span>
+				<button class="btn primary" disabled=${busy || !text.trim()} onClick=${submit}>
+					${busy ? html`<span class="spinner"></span> Organizing` : html`${icon("sparkles")} ${app ? "Suggest it" : "Share the idea"}`}
+				</button>
+			</div>
+		</div>
+		${error && html`<p class="error">${error}</p>`}
+		<div class="row" style="margin:24px 0 12px">
+			<div class="seg" role="tablist" style=${`--count:3;--index:${["open", "done", "all"].indexOf(filter)}`}>
+				${[
+					["open", "Open"],
+					["done", "Closed"],
+					["all", "All"],
+				].map(([key, label]) => html`<button role="tab" aria-selected=${filter === key} onClick=${() => setFilter(key)}>${label}</button>`)}
+			</div>
+		</div>
+		${ideas === null
+			? !error && html`<div class="empty"><span class="spinner"></span></div>`
+			: shown.length === 0
+				? html`<div class="card empty">${icon("sparkles")} ${filter === "open" ? "No open ideas yet. Share the first one above." : "Nothing here yet."}</div>`
+				: html`<div class="stack-sm">${shown.map((idea) => html`<${IdeaCard} key=${idea.id} idea=${idea} user=${user} ideas=${ideas} people=${people} onData=${setIdeas} />`)}</div>`}
+	</div>`;
+}
+
 const SETTINGS_GROUPS = [
 	{
 		label: "Account",
@@ -3710,6 +3900,7 @@ function App() {
 		}
 		const settings = /^\/settings(?:\/([a-z-]+))?/.exec(route);
 		if (settings) return html`<${Settings} user=${user} section=${settings[1]} onUsageChange=${refreshUsage} />`;
+		if (route.startsWith("/ideas")) return html`<${Ideas} user=${user} route=${route} />`;
 		return html`<${Home} />`;
 	}, [route, user]);
 	// Spend changes as the agent works, so the sidebar meter refreshes on every navigation.
@@ -3745,7 +3936,7 @@ function App() {
 			</header>
 			<nav class="nav">
 				<a class="brand" href="#/"><img src="/static/logo.png" alt="" /> <b>Agency</b></a>
-				${link("#/", "Apps", "apps")} ${link("#/settings", "Settings", "settings")}
+				${link("#/", "Apps", "apps")} ${link("#/ideas", "Ideas", "sparkles")} ${link("#/settings", "Settings", "settings")}
 				<span class="spacer"></span>
 				${usage &&
 				html`<a class="usage-chip" href="#/settings/usage" title="Your AI usage this month">

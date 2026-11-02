@@ -51,7 +51,7 @@ export function costOf(model: string, usage: PiUsage): number {
 	);
 }
 
-export async function recordUsage(userId: string, projectId: string, message: AssistantMessage): Promise<void> {
+export async function recordUsage(userId: string, projectId: string | null, message: AssistantMessage): Promise<void> {
 	const usage = message.usage;
 	if (!usage) return;
 	const tokens = (usage.input ?? 0) + (usage.output ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
