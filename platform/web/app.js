@@ -890,6 +890,87 @@ function DocSheet({ projectId, path, onClose }) {
 	<//>`;
 }
 
+const AUDIENCE_LABELS = { team: "a team (named people)", org: "the whole organization", external: "people outside the organization" };
+
+function justificationAsk(audience) {
+	return {
+		label: "Prepare the justification",
+		mode: "auto",
+		message: `Write JUSTIFICATION.md at the project root: a one-page case for the admin who decides whether this app goes live for ${AUDIENCE_LABELS[audience]}. Cover, in plain words: the problem and who has it; how many people will use the app and how often; what it saves (time or money, with a rough estimate); which organization data and connections it reads or changes; who will be able to open it, and the risks (personal data, mistakes, sharing outside the organization); and what it costs to run. Base it on SPEC.md and CHECKS.md, say which numbers are estimates, and don't change the app.`,
+	};
+}
+
+/**
+ * The Approve stage. Without required approval the owner marks it done. With it, an app shared only
+ * with named people needs nothing; otherwise the builder has the agent write the justification and asks
+ * the admins, once per level: updates after an approval go out without asking again.
+ */
+function ApproveStage({ project, data, canEdit, running, sending, onAsk, onData, onRead, onMark }) {
+	const [audience, setAudience] = useState(data.approvalNeeded ?? "org");
+	const [note, setNote] = useState("");
+	const [busy, setBusy] = useState(false);
+	const request = data.request;
+	if (!data.requireApproval) {
+		const info = data.stages.approve;
+		return html`<p>The owner looks over the app, the spec and the checks, and marks it ready to publish.</p>
+			${info?.done && html`<p class="faint">Done by ${info.by ?? "someone"}, ${timeAgo(info.at)}</p>`}
+			${data.canMarkApprove &&
+			html`<div class="row journey-actions">
+				${info?.done
+					? html`<button class="btn sm" onClick=${() => onMark("approve", false)}>Reopen</button>`
+					: html`<button class="btn primary sm" onClick=${() => onMark("approve", true)}>${icon("check")} Ready to publish</button>`}
+			</div>`}`;
+	}
+	const send = async () => {
+		setBusy(true);
+		try {
+			onData(await api(`/projects/${project.id}/journey/request-approval`, { method: "POST", body: { audience, note } }));
+			setNote("");
+			toast("Sent to the admins");
+		} catch (err) {
+			toast(err.message, "error");
+		}
+		setBusy(false);
+	};
+	if (!data.approvalNeeded) {
+		return data.approvedAudience
+			? html`<p>
+						${icon("check")} Approved for ${AUDIENCE_LABELS[data.approvedAudience]}${request?.status === "approved" && request.decided_by_name ? ` by ${request.decided_by_name}, ${timeAgo(request.decided_at)}` : ""}. Updates go out without asking again.
+					</p>
+					<p class="faint">Sharing it more widely than that needs a new approval.</p>`
+			: html`<p>This app is shared only with named people, so it doesn't need an admin's approval. Sharing it with the whole organization does.</p>`;
+	}
+	return html`<p>
+			Before it's shared with ${AUDIENCE_LABELS[data.approvalNeeded]}, an admin decides whether the app goes live. The agent writes a short justification for them; after the first approval, updates go out without asking again.
+		</p>
+		${request?.status === "pending" &&
+		html`<div class="callout">${icon("history")} Waiting for an admin since ${timeAgo(request.created_at)}. You can keep building meanwhile.</div>`}
+		${(request?.status === "declined" || request?.status === "revoked") &&
+		html`<div class="callout">
+			${icon("alert")} ${request.status === "declined" ? "Not approved yet" : "The approval was revoked"}${request.decided_by_name ? ` by ${request.decided_by_name}` : ""}:
+			${request.decision_note}
+		</div>`}
+		${canEdit &&
+		request?.status !== "pending" &&
+		html`<div class="stack-sm">
+			<div class="row journey-actions">
+				<button class="btn sm" disabled=${running || sending} onClick=${() => onAsk(justificationAsk(audience))}>${icon("sparkles")} Prepare the justification</button>
+				<button class="btn sm" onClick=${() => onRead("JUSTIFICATION.md")}>${icon("file")} Read it</button>
+			</div>
+			<label class="field">
+				<span>Who is it for?</span>
+				<select class="select" value=${audience} onChange=${(e) => setAudience(e.target.value)}>
+					<option value="org">${AUDIENCE_LABELS.org}</option>
+					<option value="external">${AUDIENCE_LABELS.external}</option>
+				</select>
+			</label>
+			<textarea class="input" rows="2" placeholder="A note for the admin (optional)" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>
+			<div class="row journey-actions">
+				<button class="btn primary sm" disabled=${busy || running} onClick=${send}>${icon("mail")} Ask for approval</button>
+			</div>
+		</div>`}`;
+}
+
 function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish }) {
 	const [data, setData] = useState(null);
 	const [open, setOpen] = useState(() => readStored("agency.journey") !== "closed");
@@ -899,9 +980,9 @@ function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish
 	const load = () => api(`/projects/${project.id}/journey`).then(setData, () => {});
 	useEffect(() => {
 		load();
-	}, [project.id, refresh, project.published]);
+	}, [project.id, refresh, project.published, project.teamAccess]);
 	if (!data) return null;
-	const isDone = (key) => (key === "publish" ? Boolean(project.published) : Boolean(data.stages[key]?.done)) && !(key === "approve" && data.approvalStale);
+	const isDone = (key) => (key === "publish" ? Boolean(project.published) : Boolean(data.stages[key]?.done));
 	const current = JOURNEY.find((s) => !isDone(s.key)) ?? JOURNEY.at(-1);
 	const stage = JOURNEY.find((s) => s.key === selected) ?? current;
 	const doneCount = JOURNEY.filter((s) => isDone(s.key)).length;
@@ -919,20 +1000,7 @@ function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish
 		}
 		setBusy(false);
 	};
-	const askApproval = async () => {
-		setBusy(true);
-		try {
-			const { asked } = await api(`/projects/${project.id}/journey/request-approval`, { method: "POST", body: {} });
-			toast(asked ? `Asked ${asked === 1 ? "an admin" : `${asked} admins`} by email` : "No email is set up, so tell an admin yourself", asked ? "success" : "error");
-		} catch (err) {
-			toast(err.message, "error");
-		}
-		setBusy(false);
-	};
 	const info = data.stages[stage.key];
-	const approveWhat = data.requireApproval
-		? "An admin tries the app, reads the spec and the checks, and approves this exact version for publishing. If the app changes afterwards, it needs approving again."
-		: "The owner looks over the app, the spec and the checks, and approves it as ready to publish.";
 	return html`<div class=${`journey${open ? " open" : ""}`}>
 		<button class="journey-head" onClick=${toggle} aria-expanded=${open}>
 			${icon("wand")} <strong>Journey</strong>
@@ -957,18 +1025,15 @@ function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish
 				)}
 			</ol>
 			<div class="journey-card">
-				<p>${stage.key === "approve" ? approveWhat : stage.what}</p>
-				${info?.done && html`<p class="faint">Done by ${info.by ?? "someone"}, ${timeAgo(info.at)}</p>`}
-				${stage.key === "approve" && data.approvalStale && html`<div class="callout">${icon("alert")} The app changed after it was approved. It needs approving again before it's published.</div>`}
+				${stage.key === "approve"
+					? html`<${ApproveStage} project=${project} data=${data} canEdit=${canEdit} running=${running} sending=${sending} onAsk=${onAsk} onData=${setData} onRead=${setDoc} onMark=${mark} />`
+					: html`<p>${stage.what}</p>
+							${info?.done && html`<p class="faint">Done by ${info.by ?? "someone"}, ${timeAgo(info.at)}</p>`}`}
 				<div class="row journey-actions">
 					${stage.ask &&
 					canEdit &&
 					html`<button class="btn primary sm" disabled=${running || sending} onClick=${() => onAsk(stage.ask)}>${icon("sparkles")} ${stage.ask.label}</button>`}
 					${stage.doc && html`<button class="btn sm" onClick=${() => setDoc(stage.doc)}>${icon("file")} Read ${stage.doc}</button>`}
-					${stage.key === "approve" &&
-					(data.canApprove
-						? html`<button class="btn primary sm" disabled=${busy || running} onClick=${() => mark("approve", true)}>${icon("check")} Approve this version</button>`
-						: canEdit && html`<button class="btn primary sm" disabled=${busy} onClick=${askApproval}>${icon("mail")} Ask for approval</button>`)}
 					${stage.key === "publish" && canEdit && html`<button class="btn primary sm" onClick=${onPublish}>${icon("globe")} Open Publish</button>`}
 					${canEdit &&
 					stage.key !== "approve" &&
@@ -976,7 +1041,6 @@ function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish
 					(info?.done
 						? html`<button class="btn sm" disabled=${busy} onClick=${() => mark(stage.key, false)}>Reopen</button>`
 						: html`<button class="btn sm" disabled=${busy} onClick=${() => mark(stage.key, true)}>${icon("check")} Mark done</button>`)}
-					${stage.key === "approve" && info?.done && !data.approvalStale && data.canApprove && html`<button class="btn sm" disabled=${busy} onClick=${() => mark("approve", false)}>Withdraw approval</button>`}
 				</div>
 			</div>`}
 		<${DocSheet} projectId=${project.id} path=${doc} onClose=${() => setDoc(null)} />
@@ -3845,11 +3909,103 @@ function PublishingSettings() {
 			: html`<div class="card stack-sm" style="padding:16px">
 					<label class="check">
 						<input type="checkbox" checked=${data.requireApproval} onChange=${(e) => save(e.target.checked)} />
-						Require an admin's approval before an app is published
+						Require an admin's approval before an app is shared with the whole organization
 					</label>
 					<p class="faint" style="font-size:13px;margin:0">
-						An admin approves the exact version to publish from the app's journey. If the app changes afterwards, it needs approving again. Members can ask for approval, which emails the admins. Apps already live stay live, and rolling back to an earlier published version needs no new approval.
+						Apps shared only with named people (a team) go live without asking. For the whole organization, the agent writes a short justification and the request waits in Approvals; approval is needed once, and later updates go out without asking again, unless the app is shared more widely. Admins get an email for each request, and builders for each decision. Apps already live stay live.
 					</p>
+				</div>`}
+	</div>`;
+}
+
+/** The admins' queue: requests to approve apps for the whole organization, each with the agent's justification. */
+function Approvals({ onChange }) {
+	const [data, setData] = useState(null);
+	const [error, setError] = useState("");
+	const [notes, setNotes] = useState({});
+	const [busy, setBusy] = useState(null);
+	const load = () => api("/approvals").then(setData, (err) => setError(err.message));
+	useEffect(() => {
+		load();
+	}, []);
+	const decide = async (item, decision) => {
+		setBusy(item.id);
+		try {
+			setData(await api(`/approvals/${item.id}`, { method: "POST", body: { decision, note: notes[item.id] ?? "" } }));
+			toast({ approved: "Approved", declined: "Sent back with your note", revoked: "Approval revoked" }[decision]);
+			onChange();
+		} catch (err) {
+			toast(err.message, "error");
+		}
+		setBusy(null);
+	};
+	const head = (item) => html`<div class="card-head row">
+		<div class="grow">
+			<h2><a href=${`#/p/${item.project_id}`}>${item.project_name}</a></h2>
+			<div class="faint" style="font-size:13px">
+				${item.requested_by_name ?? "Someone"} asks for ${AUDIENCE_LABELS[item.audience]} · ${timeAgo(item.created_at)}
+			</div>
+		</div>
+		<a class="btn sm" href=${`#/p/${item.project_id}`}>${icon("eye")} Open the app</a>
+	</div>`;
+	return html`<div class="page">
+		<header class="page-head">
+			<h1>Approvals</h1>
+			<p>Apps waiting to be shared with the whole organization. Each comes with a justification the agent wrote from the spec and the checks. Once you approve an app, its updates go out without asking you again.</p>
+		</header>
+		${error && html`<p class="error">${error}</p>`}
+		${data === null
+			? !error && html`<div class="empty"><span class="spinner"></span></div>`
+			: html`<div class="stack">
+					${data.pending.length === 0 && html`<div class="card empty">${icon("check")} Nothing waiting for you.</div>`}
+					${data.pending.map(
+						(item) => html`<div class="card approval">
+							${head(item)}
+							<div class="card-body stack-sm">
+								${item.note && html`<div class="callout">${icon("message")} ${item.note}</div>`}
+								<${PlainDoc} text=${item.justification} />
+								<textarea
+									class="input"
+									rows="2"
+									placeholder="A note for the builder (needed to send it back)"
+									value=${notes[item.id] ?? ""}
+									onInput=${(e) => setNotes({ ...notes, [item.id]: e.target.value })}
+								></textarea>
+								<div class="row">
+									<button class="btn primary sm" disabled=${busy === item.id} onClick=${() => decide(item, "approved")}>${icon("check")} Approve</button>
+									<button class="btn sm" disabled=${busy === item.id} onClick=${() => decide(item, "declined")}>Send back</button>
+								</div>
+							</div>
+						</div>`,
+					)}
+					${data.decided.length > 0 &&
+					html`<h2 class="section-title">Decided</h2>
+						<div class="card">
+							${data.decided.map(
+								(item) => html`<div class="list-row">
+									<div class="grow">
+										<div class="title"><a href=${`#/p/${item.project_id}`}>${item.project_name}</a> <span class=${`badge ${item.status === "approved" ? "live" : ""}`}>${item.status}</span></div>
+										<div class="sub">
+											${AUDIENCE_LABELS[item.audience]} · ${item.decided_by_name ?? ""} ${item.decided_at ? timeAgo(item.decided_at) : ""}${item.decision_note ? ` · ${item.decision_note}` : ""}
+										</div>
+									</div>
+									${item.status === "approved" &&
+									html`<button
+										class="btn sm"
+										disabled=${busy === item.id}
+										onClick=${() => {
+											const why = prompt("Why revoke it? The builder gets this note. What is live stays live.");
+											if (why) {
+												notes[item.id] = why;
+												decide(item, "revoked");
+											}
+										}}
+									>
+										Revoke
+									</button>`}
+								</div>`,
+							)}
+						</div>`}
 				</div>`}
 	</div>`;
 }
@@ -3924,6 +4080,9 @@ function App() {
 	const [usage, setUsage] = useState(null);
 	const route = useRoute();
 	const refreshUsage = () => api("/me").then((data) => setUsage(data.usage), () => {});
+	// Admins see how many approval requests wait for them.
+	const [pending, setPending] = useState(0);
+	const refreshPending = () => user?.role === "admin" && api("/approvals/count").then((data) => setPending(data.pending), () => {});
 	useEffect(() => {
 		api("/me").then(
 			(data) => {
@@ -3949,12 +4108,14 @@ function App() {
 		}
 		const settings = /^\/settings(?:\/([a-z-]+))?/.exec(route);
 		if (settings) return html`<${Settings} user=${user} section=${settings[1]} onUsageChange=${refreshUsage} />`;
+		if (route.startsWith("/approvals") && user.role === "admin") return html`<${Approvals} onChange=${refreshPending} />`;
 		return html`<${Home} />`;
 	}, [route, user]);
 	// Spend changes as the agent works, so the sidebar meter refreshes on every navigation.
 	useEffect(() => {
 		if (user) refreshUsage();
-	}, [route]);
+		if (user) refreshPending();
+	}, [route, user]);
 	if (user === undefined) return null;
 	if (user === null) return html`<${Login} onLogin=${setUser} /><${Toaster} />`;
 	const link = (href, label, iconName) => {
@@ -3984,7 +4145,11 @@ function App() {
 			</header>
 			<nav class="nav">
 				<a class="brand" href="#/"><img src="/static/logo.png" alt="" /> <b>Agency</b></a>
-				${link("#/", "Apps", "apps")} ${link("#/settings", "Settings", "settings")}
+				${link("#/", "Apps", "apps")}
+				${user.role === "admin" && html`<a href="#/approvals" class="nav-link" aria-current=${route.startsWith("/approvals") ? "page" : undefined}>
+					${icon("check")} <span class="label">Approvals</span>${pending > 0 && html`<span class="badge accent nav-count">${pending}</span>`}
+				</a>`}
+				${link("#/settings", "Settings", "settings")}
 				<span class="spacer"></span>
 				${usage &&
 				html`<a class="usage-chip" href="#/settings/usage" title="Your AI usage this month">

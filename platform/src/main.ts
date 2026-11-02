@@ -97,7 +97,7 @@ import {
 	SkillError,
 	updateSkill,
 } from "./skills.ts";
-import { canApprove, JourneyError, journeySettings, journeyView, requestApproval, saveJourneySettings, setStage } from "./journey.ts";
+import { approvalQueue, assertCanShare, countPending, decide, JourneyError, journeySettings, journeyView, requestApproval, saveJourneySettings, setStage } from "./journey.ts";
 import { saveSso, signInOptions, SsoError, ssoFinish, ssoStartUrl, ssoView } from "./sso.ts";
 import { assertBudget, BudgetError, listUsersWithUsage, parseBudget, recordUsage, setBudget, usageDetail, usageFor } from "./usage.ts";
 
@@ -376,7 +376,10 @@ api.get("/projects/:id/sharing", async (c) => {
 api.put("/projects/:id/sharing", async (c) => {
 	const { project } = await projectFor(c, "owner");
 	const body = await c.req.json<{ teamAccess?: string; member?: { userId: string; role: string | null } }>();
-	if (body.teamAccess !== undefined) await setTeamAccess(project, body.teamAccess);
+	if (body.teamAccess !== undefined) {
+		await assertCanShare(project, body.teamAccess);
+		await setTeamAccess(project, body.teamAccess);
+	}
 	if (body.member) await setMember(project, String(body.member.userId ?? ""), body.member.role ?? null);
 	const updated = (await getProject(project.id))!;
 	return c.json({ ...(await getSharing(updated)), canManage: true });
@@ -637,22 +640,33 @@ api.post("/projects/:id/publish", async (c) => {
 // The journey: the stages an app goes through, and approval before publishing (journey.ts)
 
 api.get("/projects/:id/journey", async (c) => {
-	const { project, role } = await sandboxFor(c, "viewer");
-	return c.json({ ...(await journeyView(project)), canApprove: await canApprove(c.get("user"), role === "owner") });
+	const { project, role } = await projectFor(c, "viewer");
+	return c.json(await journeyView(project, c.get("user"), role === "owner"));
 });
 
 api.put("/projects/:id/journey/:stage", async (c) => {
-	const { project, role } = await sandboxFor(c, "editor");
+	const { project, role } = await projectFor(c, "editor");
 	const body = await c.req.json<{ done?: boolean }>();
 	await setStage(project, c.get("user"), c.req.param("stage"), body.done !== false, role === "owner");
-	return c.json({ ...(await journeyView(project)), canApprove: await canApprove(c.get("user"), role === "owner") });
+	return c.json(await journeyView(project, c.get("user"), role === "owner"));
 });
 
+/** JSON `{ audience?, note? }`: asks the admins to approve the app, with JUSTIFICATION.md as it is now. */
 api.post("/projects/:id/journey/request-approval", async (c) => {
-	const { project } = await sandboxFor(c, "editor");
-	const body = await c.req.json<{ note?: string }>().catch(() => ({ note: "" }));
-	const note = String(body.note ?? "").trim().slice(0, 500);
-	return c.json({ asked: await requestApproval(project, c.get("user"), note) });
+	const { project, role } = await sandboxFor(c, "editor");
+	await requestApproval(project, c.get("user"), await c.req.json());
+	return c.json(await journeyView(project, c.get("user"), role === "owner"));
+});
+
+// The admins' queue of approval requests
+api.get("/approvals", requireAdmin, async (c) => c.json(await approvalQueue()));
+
+api.get("/approvals/count", requireAdmin, async (c) => c.json({ pending: await countPending() }));
+
+/** JSON `{ decision: "approved" | "declined" | "revoked", note? }`. */
+api.post("/approvals/:id", requireAdmin, async (c) => {
+	await decide(Number(c.req.param("id")), c.get("user"), await c.req.json());
+	return c.json(await approvalQueue());
 });
 
 api.post("/projects/:id/rollback", async (c) => {

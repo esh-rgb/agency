@@ -4135,3 +4135,13 @@ p.small {
 	border-radius: 50%;
 	background: var(--text-3);
 }
+
+/* The count of approval requests beside the admins' Approvals link. */
+.nav-link .nav-count {
+	margin-inline-start: auto;
+	padding: 0 7px;
+}
+
+.card.approval .card-body .doc {
+	padding: 4px 0;
+}

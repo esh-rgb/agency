@@ -78,8 +78,8 @@ export async function publish(project: Project, userId: string, onLog: (line: st
 	publishing.add(project.id);
 	try {
 		onLog("Saving the current version");
+		await assertApproved(project);
 		const commit = await bridge.commit("Publish");
-		await assertApproved(project, commit);
 		onLog("Building for production");
 		const build = await execIn(project, RELEASE_SCRIPT, 15 * 60_000);
 		if (build.code !== 0) throw new Error(`Build failed:\n${(build.stdout + build.stderr).slice(-4000)}`);

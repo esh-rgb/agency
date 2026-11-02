@@ -158,18 +158,35 @@ create unique index if not exists user_skills_org_name on user_skills (name) whe
 alter table projects add column if not exists app_idle_minutes integer not null default 0;
 alter table projects add column if not exists app_asleep_since timestamptz;
 
--- The builder's journey (journey.ts): who finished which stage of an app, and at which version.
--- The latest row per stage wins; done = false reopens a stage.
+-- The builder's journey (journey.ts): who finished which stage of an app. The latest row per stage
+-- wins; done = false reopens a stage.
 create table if not exists journey_events (
 	id serial primary key,
 	project_id uuid not null references projects(id) on delete cascade,
 	stage text not null,
 	done boolean not null,
-	git_commit text not null default '',
 	user_id uuid references users(id) on delete set null,
 	created_at timestamptz not null default now()
 );
 create index if not exists journey_events_project on journey_events (project_id, stage, id);
+
+-- Requests for an admin to approve an app for an audience (journey.ts), with the justification the
+-- agent wrote as it was when the request was filed.
+create table if not exists approval_requests (
+	id serial primary key,
+	project_id uuid not null references projects(id) on delete cascade,
+	requested_by uuid references users(id) on delete set null,
+	audience text not null check (audience in ('team', 'org', 'external')),
+	justification text not null default '',
+	note text not null default '',
+	status text not null default 'pending' check (status in ('pending', 'approved', 'declined', 'revoked')),
+	decision_note text not null default '',
+	decided_by uuid references users(id) on delete set null,
+	created_at timestamptz not null default now(),
+	decided_at timestamptz
+);
+create index if not exists approval_requests_project on approval_requests (project_id, id);
+create index if not exists approval_requests_pending on approval_requests (status) where status = 'pending';
 `;
 
 export async function migrate(): Promise<void> {

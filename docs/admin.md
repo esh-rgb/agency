@@ -16,10 +16,18 @@ Under **Settings > Organization > Models** an admin sees every Claude model the 
 
 Every app shows a **Journey** above its chat, for people who have never built software: **Describe** (the agent asks questions and writes the spec in `SPEC.md`), **Plan** (it proposes how it will build it, in Plan mode), **Build**, **Check** (it tests the app against every point in the spec, fixes what fails and writes the results in `CHECKS.md`, with things to try by hand), **Approve** and **Publish**. Each stage explains what happens, has a button that asks the agent for its part in the right mode, and is marked done by an editor; the spec and the checks open from the journey. The steps are a guide: people can still just chat.
 
-Under **Settings > Organization > Publishing** an admin can require approval before publishing. Then only an admin can approve, and an app can be published only in the exact version an admin approved: approving saves the current files as a version, and if anything changes afterwards (an agent turn, a code edit, a restore) the journey says so and it needs approving again. Editors press **Ask for approval** to email the admins. Apps already live stay live, and rolling back to an earlier published version needs no new approval. With the setting off, the owner approves, and publishing doesn't wait for it.
+Under **Settings > Organization > Publishing** an admin can require approval before an app is shared with the whole organization. The admin runs the platform rather than building on it, and decides what goes live; the approval is built so it doesn't become a bottleneck:
 
-<img src="assets/screenshots/journey.png" alt="The builder with the journey above the chat: four stages done, Approve current, and an Ask for approval button" width="100%">
-<img src="assets/screenshots/publishing.png" alt="Settings, Publishing: Require an admin's approval before an app is published" width="100%">
+- **Risk follows sharing.** An app shared only with named people (a team) goes live without asking. One the whole organization can open needs an admin's approval. A builder can also ask for approval for people outside the organization, which is recorded for when Agency supports sharing outside it.
+- **Once per level.** After an app is approved, its updates are published without asking again. Sharing it more widely than what was approved needs a new approval.
+- **A justification with every request.** In the journey's Approve stage the agent writes `JUSTIFICATION.md`: the problem, who uses the app and how often, what it saves, which data it touches, who can open it, the risks and the running cost. The builder reads it, picks the audience, adds a note and presses **Ask for approval**; the request keeps a copy of the justification as it was sent.
+- **One queue.** Admins see the requests under **Approvals** in the sidebar, with a count. Each one has the justification and a link to the app (preview, spec and checks); the admin approves it or sends it back with a note, and can revoke an approval later. What is live stays live after a revoke, but the app can't be published again until it's approved. Admins get an email for each request, and builders for each decision.
+
+With the setting off, the owner marks the app ready to publish, and publishing doesn't wait for it.
+
+<img src="assets/screenshots/journey.png" alt="The journey's Approve stage: prepare the justification, pick who the app is for, and ask for approval" width="100%">
+<img src="assets/screenshots/approvals.png" alt="Approvals: a request with the agent's justification, Approve and Send back, and earlier decisions" width="100%">
+<img src="assets/screenshots/publishing.png" alt="Settings, Publishing: Require an admin's approval before an app is shared with the whole organization" width="100%">
 
 ## Sharing apps
 
