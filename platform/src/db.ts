@@ -176,7 +176,7 @@ create table if not exists approval_requests (
 	id serial primary key,
 	project_id uuid not null references projects(id) on delete cascade,
 	requested_by uuid references users(id) on delete set null,
-	audience text not null check (audience in ('team', 'org', 'external')),
+	audience text not null,
 	justification text not null default '',
 	note text not null default '',
 	status text not null default 'pending' check (status in ('pending', 'approved', 'declined', 'revoked')),

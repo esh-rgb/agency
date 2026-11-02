@@ -6,8 +6,9 @@
 // The journey is a guide, not a gate, with one exception an admin can turn on: approval before
 // publishing to the whole organization. The admin runs the platform rather than building on it, and
 // decides what goes live; to keep that from becoming a bottleneck:
-// - the risk comes from who the app is shared with: an app shared only with named people (a team)
-//   needs no approval, one the whole organization can open does;
+// - the risk comes from who the app is for: an app shared only with named people (a team) needs no
+//   approval, one the whole organization can open does, and each organization lists its own outside
+//   audiences (customers, beneficiaries, vendors, partners...) and which of them need approval;
 // - only the first publish at a level needs approval: updates go out without asking again, unless
 //   the app is shared more widely than what was approved;
 // - the agent writes a short justification (JUSTIFICATION.md) that goes with each request;
@@ -24,9 +25,24 @@ import { getSetting, putSetting } from "./settings.ts";
 export const STAGES = ["describe", "plan", "build", "check", "approve"] as const;
 export type Stage = (typeof STAGES)[number];
 
-/** Who an app is for, from least to most risky. "external" is declared by the builder for apps meant for people outside the organization. */
-export const AUDIENCES = ["team", "org", "external"] as const;
-export type Audience = (typeof AUDIENCES)[number];
+/**
+ * Who an app is for. "team" (named people) and "org" (the whole organization) follow the app's sharing;
+ * the rest are the organization's own outside audiences, which a builder declares in a request.
+ */
+export type Audience = string;
+
+export interface OutsideAudience {
+	key: string;
+	label: string;
+	// Whether an app meant for this audience needs an admin's approval.
+	approval: boolean;
+}
+
+const DEFAULT_AUDIENCES: OutsideAudience[] = [
+	{ key: "customers", label: "Customers", approval: true },
+	{ key: "partners", label: "Partners", approval: true },
+	{ key: "vendors", label: "Vendors", approval: true },
+];
 
 /** Thrown for problems the user caused (unknown stage, not allowed, not approved); the API answers with 400. */
 export class JourneyError extends Error {}
@@ -34,20 +50,46 @@ export class JourneyError extends Error {}
 interface JourneySettings {
 	// Publishing an app the whole organization can open needs an admin's approval, once per level.
 	requireApproval: boolean;
+	// The organization's audiences outside it, as its policy names them.
+	audiences: OutsideAudience[];
 }
 
 export async function journeySettings(): Promise<JourneySettings> {
-	return { requireApproval: false, ...(await getSetting<JourneySettings>("journey")) };
+	return { requireApproval: false, audiences: DEFAULT_AUDIENCES, ...(await getSetting<JourneySettings>("journey")) };
 }
 
-export async function saveJourneySettings(body: { requireApproval?: unknown }): Promise<JourneySettings> {
-	const settings = { requireApproval: body.requireApproval === true };
+function audienceKey(label: string): string {
+	return label.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+}
+
+export async function saveJourneySettings(body: { requireApproval?: unknown; audiences?: unknown }): Promise<JourneySettings> {
+	const current = await journeySettings();
+	let audiences = current.audiences;
+	if (Array.isArray(body.audiences)) {
+		const seen = new Set(["team", "org"]);
+		audiences = [];
+		for (const item of body.audiences.slice(0, 20) as Partial<OutsideAudience>[]) {
+			const label = String(item?.label ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+			const key = String(item?.key ?? "") || audienceKey(label);
+			if (!label || !key || seen.has(key)) continue;
+			seen.add(key);
+			audiences.push({ key, label, approval: item?.approval !== false });
+		}
+	}
+	const settings = { requireApproval: body.requireApproval === undefined ? current.requireApproval : body.requireApproval === true, audiences };
 	await putSetting("journey", settings);
 	return settings;
 }
 
+/** A team is narrowest, then the organization; an outside audience is wider than both. */
 function rank(audience: Audience): number {
-	return AUDIENCES.indexOf(audience);
+	return audience === "team" ? 0 : audience === "org" ? 1 : 2;
+}
+
+function labelOf(audience: Audience, settings: JourneySettings): string {
+	if (audience === "team") return "a team";
+	if (audience === "org") return "the whole organization";
+	return settings.audiences.find((a) => a.key === audience)?.label ?? audience;
 }
 
 /** The level the app's sharing puts it at: a team when only named people have it, the organization otherwise. */
@@ -98,6 +140,11 @@ async function latestRequest(project: Project): Promise<ApprovalRequest | undefi
 	]);
 }
 
+async function approvedList(project: Project): Promise<Audience[]> {
+	const rows = await query<{ audience: Audience }>("select distinct audience from approval_requests where project_id = $1 and status = 'approved'", [project.id]);
+	return rows.map((r) => r.audience);
+}
+
 /** The widest level an admin approved for the app and hasn't revoked, if any. */
 async function approvedAudience(project: Project): Promise<Audience | null> {
 	const rows = await query<{ audience: Audience }>("select audience from approval_requests where project_id = $1 and status = 'approved'", [project.id]);
@@ -133,6 +180,9 @@ export async function journeyView(project: Project, user: User, isOwner: boolean
 		approvalNeeded: gate.needed,
 		approvedAudience: gate.approved,
 		request: latest ?? null,
+		// The audiences a builder can ask approval for: the organization, and outside ones that need it.
+		audiences: [{ key: "org", label: labelOf("org", settings) }, ...settings.audiences.filter((a) => a.approval).map((a) => ({ key: a.key, label: a.label }))],
+		approvedAudiences: await approvedList(project),
 		canMarkApprove: !settings.requireApproval && isOwner,
 		isAdmin: user.role === "admin",
 	};
@@ -183,14 +233,17 @@ async function mailQuietly(to: string, subject: string, lines: string[]): Promis
 	return sendMail({ to, subject, text: lines.join("\n") }).catch(() => false);
 }
 
-const AUDIENCE_WORDS: Record<Audience, string> = { team: "a team", org: "the whole organization", external: "people outside the organization" };
-
 /**
  * Files a request for an admin to approve the app at `audience`, with a copy of JUSTIFICATION.md as it is
  * now, and emails the admins. A pending request for the app is replaced.
  */
 export async function requestApproval(project: Project, user: User, body: { audience?: string; note?: string }): Promise<ApprovalRequest> {
-	const audience = (AUDIENCES as readonly string[]).includes(String(body.audience)) ? (body.audience as Audience) : sharedAudience(project);
+	const settings = await journeySettings();
+	const wanted = String(body.audience ?? "org");
+	const outside = settings.audiences.find((a) => a.key === wanted);
+	if (wanted !== "org" && !outside) throw new JourneyError("Pick who the app is for");
+	if (outside && !outside.approval) throw new JourneyError(`Apps for ${outside.label} don't need an admin's approval`);
+	const audience: Audience = wanted;
 	const note = String(body.note ?? "").trim().slice(0, 1000);
 	const file = await readFile(project, "JUSTIFICATION.md").catch(() => null);
 	const justification = file && "content" in file ? file.content.slice(0, 20_000) : "";
@@ -207,7 +260,7 @@ export async function requestApproval(project: Project, user: User, body: { audi
 		await mailQuietly(admin.email, `${who} asks you to approve ${project.name}`, [
 			`Hi ${admin.name || admin.email},`,
 			"",
-			`${who} asks you to approve ${project.name} for ${AUDIENCE_WORDS[audience]}.`,
+			`${who} asks you to approve ${project.name} for ${labelOf(audience, settings)}.`,
 			...(note ? ["", `Their note: ${note}`] : []),
 			"",
 			`The justification, the spec and the checks are waiting in Approvals: ${config.publicUrl}/#/approvals`,
@@ -221,17 +274,20 @@ export async function requestApproval(project: Project, user: User, body: { audi
 export interface QueueItem extends ApprovalRequest {
 	project_name: string;
 	project_slug: string;
+	audience_label: string;
 }
 
 /** The admins' queue: pending requests first (oldest first), then the latest 30 decisions. */
 export async function approvalQueue(): Promise<{ pending: QueueItem[]; decided: QueueItem[] }> {
 	const select = `select ${REQUEST_COLUMNS}, p.name as project_name, p.slug as project_slug
 		from approval_requests r join projects p on p.id = r.project_id ${REQUEST_JOINS}`;
-	const [pending, decided] = await Promise.all([
+	const [pending, decided, settings] = await Promise.all([
 		query<QueueItem>(`${select} where r.status = 'pending' order by r.id`),
 		query<QueueItem>(`${select} where r.status <> 'pending' order by r.decided_at desc nulls last limit 30`),
+		journeySettings(),
 	]);
-	return { pending, decided };
+	const label = (item: QueueItem) => ({ ...item, audience_label: labelOf(item.audience, settings) });
+	return { pending: pending.map(label), decided: decided.map(label) };
 }
 
 export async function countPending(): Promise<number> {
@@ -259,13 +315,14 @@ export async function decide(id: number, admin: User, body: { decision?: string;
 	]);
 	if (!project || !requester) return;
 	const words = { approved: "approved", declined: "didn't approve", revoked: "revoked the approval of" }[decision];
+	const audience = labelOf(current.audience, await journeySettings());
 	await mailQuietly(requester.email, `${admin.name || admin.email} ${words} ${project.name}`, [
 		`Hi ${requester.name || requester.email},`,
 		"",
 		decision === "approved"
-			? `${project.name} is approved for ${AUDIENCE_WORDS[current.audience]}. You can publish it now, and later updates go out without asking again.`
+			? `${project.name} is approved for ${audience}. You can publish it now, and later updates go out without asking again.`
 			: decision === "declined"
-				? `${project.name} wasn't approved for ${AUDIENCE_WORDS[current.audience]} yet.`
+				? `${project.name} wasn't approved for ${audience} yet.`
 				: `The approval of ${project.name} was revoked. What is live stays live, but it can't be published again until it's approved.`,
 		...(note ? ["", `${admin.name || admin.email} wrote: ${note}`] : []),
 		"",

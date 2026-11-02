@@ -890,13 +890,12 @@ function DocSheet({ projectId, path, onClose }) {
 	<//>`;
 }
 
-const AUDIENCE_LABELS = { team: "a team (named people)", org: "the whole organization", external: "people outside the organization" };
 
-function justificationAsk(audience) {
+function justificationAsk(label) {
 	return {
 		label: "Prepare the justification",
 		mode: "auto",
-		message: `Write JUSTIFICATION.md at the project root: a one-page case for the admin who decides whether this app goes live for ${AUDIENCE_LABELS[audience]}. Cover, in plain words: the problem and who has it; how many people will use the app and how often; what it saves (time or money, with a rough estimate); which organization data and connections it reads or changes; who will be able to open it, and the risks (personal data, mistakes, sharing outside the organization); and what it costs to run. Base it on SPEC.md and CHECKS.md, say which numbers are estimates, and don't change the app.`,
+		message: `Write JUSTIFICATION.md at the project root: a one-page case for the admin who decides whether this app goes live for ${label}. Cover, in plain words: the problem and who has it; how many people will use the app and how often; what it saves (time or money, with a rough estimate); which organization data and connections it reads or changes; who will be able to open it, and the risks (personal data, mistakes, sharing outside the organization); and what it costs to run. Base it on SPEC.md and CHECKS.md, say which numbers are estimates, and don't change the app.`,
 	};
 }
 
@@ -909,7 +908,11 @@ function ApproveStage({ project, data, canEdit, running, sending, onAsk, onData,
 	const [audience, setAudience] = useState(data.approvalNeeded ?? "org");
 	const [note, setNote] = useState("");
 	const [busy, setBusy] = useState(false);
+	const [asking, setAsking] = useState(false);
 	const request = data.request;
+	const labelOf = (key) => data.audiences.find((a) => a.key === key)?.label ?? (key === "team" ? "a team" : key);
+	// Outside audiences (customers, partners...) the app isn't approved for yet.
+	const outside = data.audiences.filter((a) => a.key !== "org" && !data.approvedAudiences.includes(a.key));
 	if (!data.requireApproval) {
 		const info = data.stages.approve;
 		return html`<p>The owner looks over the app, the spec and the checks, and marks it ready to publish.</p>
@@ -932,43 +935,53 @@ function ApproveStage({ project, data, canEdit, running, sending, onAsk, onData,
 		}
 		setBusy(false);
 	};
-	if (!data.approvalNeeded) {
-		return data.approvedAudience
-			? html`<p>
-						${icon("check")} Approved for ${AUDIENCE_LABELS[data.approvedAudience]}${request?.status === "approved" && request.decided_by_name ? ` by ${request.decided_by_name}, ${timeAgo(request.decided_at)}` : ""}. Updates go out without asking again.
-					</p>
-					<p class="faint">Sharing it more widely than that needs a new approval.</p>`
-			: html`<p>This app is shared only with named people, so it doesn't need an admin's approval. Sharing it with the whole organization does.</p>`;
-	}
-	return html`<p>
-			Before it's shared with ${AUDIENCE_LABELS[data.approvalNeeded]}, an admin decides whether the app goes live. The agent writes a short justification for them; after the first approval, updates go out without asking again.
-		</p>
-		${request?.status === "pending" &&
-		html`<div class="callout">${icon("history")} Waiting for an admin since ${timeAgo(request.created_at)}. You can keep building meanwhile.</div>`}
+	const options = data.approvalNeeded ? data.audiences : data.audiences.filter((a) => outside.includes(a));
+	const form = html`<div class="stack-sm">
+		<label class="field">
+			<span>Who is it for?</span>
+			<select class="select" value=${options.some((a) => a.key === audience) ? audience : options[0]?.key} onChange=${(e) => setAudience(e.target.value)}>
+				${options.map((a) => html`<option value=${a.key}>${a.label}</option>`)}
+			</select>
+		</label>
+		<div class="row journey-actions">
+			<button class="btn sm" disabled=${running || sending} onClick=${() => onAsk(justificationAsk(labelOf(audience)))}>${icon("sparkles")} Prepare the justification</button>
+			<button class="btn sm" onClick=${() => onRead("JUSTIFICATION.md")}>${icon("file")} Read it</button>
+		</div>
+		<textarea class="input" rows="2" placeholder="A note for the admin (optional)" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>
+		<div class="row journey-actions">
+			<button class="btn primary sm" disabled=${busy || running} onClick=${send}>${icon("mail")} Ask for approval</button>
+		</div>
+	</div>`;
+	const status = html`${request?.status === "pending" &&
+		html`<div class="callout">${icon("history")} Waiting for an admin since ${timeAgo(request.created_at)} (${labelOf(request.audience)}). You can keep building meanwhile.</div>`}
 		${(request?.status === "declined" || request?.status === "revoked") &&
 		html`<div class="callout">
 			${icon("alert")} ${request.status === "declined" ? "Not approved yet" : "The approval was revoked"}${request.decided_by_name ? ` by ${request.decided_by_name}` : ""}:
 			${request.decision_note}
-		</div>`}
-		${canEdit &&
-		request?.status !== "pending" &&
-		html`<div class="stack-sm">
-			<div class="row journey-actions">
-				<button class="btn sm" disabled=${running || sending} onClick=${() => onAsk(justificationAsk(audience))}>${icon("sparkles")} Prepare the justification</button>
-				<button class="btn sm" onClick=${() => onRead("JUSTIFICATION.md")}>${icon("file")} Read it</button>
-			</div>
-			<label class="field">
-				<span>Who is it for?</span>
-				<select class="select" value=${audience} onChange=${(e) => setAudience(e.target.value)}>
-					<option value="org">${AUDIENCE_LABELS.org}</option>
-					<option value="external">${AUDIENCE_LABELS.external}</option>
-				</select>
-			</label>
-			<textarea class="input" rows="2" placeholder="A note for the admin (optional)" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>
-			<div class="row journey-actions">
-				<button class="btn primary sm" disabled=${busy || running} onClick=${send}>${icon("mail")} Ask for approval</button>
-			</div>
 		</div>`}`;
+	if (!data.approvalNeeded) {
+		const canAskOutside = canEdit && outside.length > 0 && request?.status !== "pending";
+		return html`${data.approvedAudience
+				? html`<p>
+							${icon("check")} Approved for ${data.approvedAudiences.map(labelOf).join(", ")}${request?.status === "approved" && request.decided_by_name ? ` by ${request.decided_by_name}, ${timeAgo(request.decided_at)}` : ""}. Updates go out without asking again.
+						</p>`
+				: html`<p>This app is shared only with named people, so it doesn't need an admin's approval. Sharing it with the whole organization does.</p>`}
+			${status}
+			${canAskOutside &&
+			(asking
+				? form
+				: html`<button class="btn sm" onClick=${() => {
+						setAudience(outside[0].key);
+						setAsking(true);
+					}}>
+						${icon("users")} For an outside audience? Ask for approval
+					</button>`)}`;
+	}
+	return html`<p>
+			Before it's shared with ${labelOf(data.approvalNeeded)}, an admin decides whether the app goes live. The agent writes a short justification for them; after the first approval, updates go out without asking again.
+		</p>
+		${status}
+		${canEdit && request?.status !== "pending" && form}`;
 }
 
 function Journey({ project, canEdit, running, sending, refresh, onAsk, onPublish }) {
@@ -3888,15 +3901,23 @@ function PublishingSettings() {
 	useEffect(() => {
 		api("/settings/journey").then(setData, (err) => setError(err.message));
 	}, []);
-	const save = async (requireApproval) => {
+	const [label, setLabel] = useState("");
+	const save = async (patch) => {
 		const before = data;
-		setData({ ...data, requireApproval });
+		setData({ ...data, ...patch });
 		try {
-			setData(await api("/settings/journey", { method: "PUT", body: { requireApproval } }));
+			setData(await api("/settings/journey", { method: "PUT", body: patch }));
 		} catch (err) {
 			setData(before);
 			toast(err.message, "error");
 		}
+	};
+	const setAudiences = (audiences) => save({ audiences });
+	const addAudience = (name) => {
+		const clean = name.trim();
+		if (!clean || data.audiences.some((a) => a.label.toLowerCase() === clean.toLowerCase())) return;
+		setAudiences([...data.audiences, { label: clean, approval: true }]);
+		setLabel("");
 	};
 	return html`<div class="page">
 		<header class="page-head">
@@ -3908,12 +3929,41 @@ function PublishingSettings() {
 			? !error && html`<div class="empty"><span class="spinner"></span></div>`
 			: html`<div class="card stack-sm" style="padding:16px">
 					<label class="check">
-						<input type="checkbox" checked=${data.requireApproval} onChange=${(e) => save(e.target.checked)} />
+						<input type="checkbox" checked=${data.requireApproval} onChange=${(e) => save({ requireApproval: e.target.checked })} />
 						Require an admin's approval before an app is shared with the whole organization
 					</label>
 					<p class="faint" style="font-size:13px;margin:0">
 						Apps shared only with named people (a team) go live without asking. For the whole organization, the agent writes a short justification and the request waits in Approvals; approval is needed once, and later updates go out without asking again, unless the app is shared more widely. Admins get an email for each request, and builders for each decision. Apps already live stay live.
 					</p>
+				</div>
+				<div class="card stack-sm" style="padding:16px;margin-top:14px">
+					<h2 style="margin:0;font-size:15px">Who apps can be for, outside the organization</h2>
+					<p class="faint" style="font-size:13px;margin:0">
+						Name the audiences your policy allows, such as customers, beneficiaries, vendors or partners, and whether an app for each needs your approval. Builders pick one when they ask for approval; approval for an outside audience also covers the whole organization.
+					</p>
+					${data.audiences.map(
+						(a, i) => html`<div class="row" key=${a.key}>
+							<span class="grow">${a.label}</span>
+							<label class="check"
+								><input
+									type="checkbox"
+									checked=${a.approval}
+									onChange=${(e) => setAudiences(data.audiences.map((x, k) => (k === i ? { ...x, approval: e.target.checked } : x)))}
+								/>
+								Needs approval</label
+							>
+							<button class="icon-btn" title="Remove" onClick=${() => setAudiences(data.audiences.filter((x, k) => k !== i))}>${icon("x")}</button>
+						</div>`,
+					)}
+					<div class="row">
+						<input class="input grow" placeholder="Add an audience, e.g. Beneficiaries" value=${label} onInput=${(e) => setLabel(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addAudience(label)} />
+						<button class="btn sm" disabled=${!label.trim()} onClick=${() => addAudience(label)}>Add</button>
+					</div>
+					<div class="chips" style="justify-content:flex-start">
+						${["Customers", "Beneficiaries", "Vendors", "Partners", "Suppliers", "Volunteers", "Members", "The public"]
+							.filter((name) => !data.audiences.some((a) => a.label === name))
+							.map((name) => html`<button class="chip" onClick=${() => addAudience(name)}>${icon("plus")} ${name}</button>`)}
+					</div>
 				</div>`}
 	</div>`;
 }
@@ -3943,7 +3993,7 @@ function Approvals({ onChange }) {
 		<div class="grow">
 			<h2><a href=${`#/p/${item.project_id}`}>${item.project_name}</a></h2>
 			<div class="faint" style="font-size:13px">
-				${item.requested_by_name ?? "Someone"} asks for ${AUDIENCE_LABELS[item.audience]} · ${timeAgo(item.created_at)}
+				${item.requested_by_name ?? "Someone"} asks for ${item.audience_label} · ${timeAgo(item.created_at)}
 			</div>
 		</div>
 		<a class="btn sm" href=${`#/p/${item.project_id}`}>${icon("eye")} Open the app</a>
@@ -3986,7 +4036,7 @@ function Approvals({ onChange }) {
 									<div class="grow">
 										<div class="title"><a href=${`#/p/${item.project_id}`}>${item.project_name}</a> <span class=${`badge ${item.status === "approved" ? "live" : ""}`}>${item.status}</span></div>
 										<div class="sub">
-											${AUDIENCE_LABELS[item.audience]} · ${item.decided_by_name ?? ""} ${item.decided_at ? timeAgo(item.decided_at) : ""}${item.decision_note ? ` · ${item.decision_note}` : ""}
+											${item.audience_label} · ${item.decided_by_name ?? ""} ${item.decided_at ? timeAgo(item.decided_at) : ""}${item.decision_note ? ` · ${item.decision_note}` : ""}
 										</div>
 									</div>
 									${item.status === "approved" &&
